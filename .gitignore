@@ -1,0 +1,11 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+node_modules/
+dist/
+backend/data/LICENCES/SOURCE/
+backend/data/LICENCES/TRAIN/
+.clinerules/
+memory-bank/

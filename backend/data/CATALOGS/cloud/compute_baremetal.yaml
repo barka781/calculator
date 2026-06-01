@@ -1,0 +1,201 @@
+# Prix des ressources de calcul Bare Metal
+version: "S1-2026"
+metadata:
+  category: "compute"
+  type: "baremetal"
+  description: "Prix des ressources de calcul Bare Metal v3"
+  default_discount: 25
+  status: "active"
+
+items:
+  - sku: "csp:fr1:iaas:bm:eco:v3"
+    name: "BM:V3:ECO"
+    description: "20 Cores / 40 Threads - 2.2/3.0Ghz (Intel Silver 4114 ou equivalent) - 384Go ram"
+    type: "baremetal"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 1153.97
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 865.48€
+    specs:
+      cores: 20
+      threads: 40
+      cpu_model: "Intel Silver 4114"
+      cpu_base_freq: 2.2
+      cpu_turbo_freq: 3.0
+      ram: 384
+    metadata:
+      snc: "EN COURS"
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:bm:standard:v3"
+    name: "BM:V3:STD"
+    description: "32 Cores / 64 Threads - 2.4/3.4Ghz (Intel Silver 4314 ou equivalent) - 384Go ram"
+    type: "baremetal"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 1275.41
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 956.56€
+    specs:
+      cores: 32
+      threads: 64
+      cpu_model: "Intel Silver 4314"
+      cpu_base_freq: 2.4
+      cpu_turbo_freq: 3.4
+      ram: 384
+    metadata:
+      snc: "EN COURS"
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:bm:advance:v3"
+    name: "BM:V3:ADV"
+    description: "48 Cores / 96 Threads - 2.8/3.5Ghz (Intel Gold 6342 ou equivalent) - 768Go ram"
+    type: "baremetal"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 1979.60
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 1484.70€
+    specs:
+      cores: 48
+      threads: 96
+      cpu_model: "Intel Gold 6342"
+      cpu_base_freq: 2.8
+      cpu_turbo_freq: 3.5
+      ram: 768
+    metadata:
+      snc: "EN COURS"
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:bm:perf1:v3"
+    name: "BM:V3:PERF1"
+    description: "16 Cores / 32 Threads - 3.2/3.6Ghz (Intel 5315Y ou equivalent) - 384Go ram"
+    type: "baremetal"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 1455.24
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 1091.43€
+    specs:
+      cores: 16
+      threads: 32
+      cpu_model: "Intel 5315Y"
+      cpu_base_freq: 3.2
+      cpu_turbo_freq: 3.6
+      ram: 384
+    metadata:
+      snc: "EN COURS"
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:bm:perf2:v3"
+    name: "BM:V3:PERF2"
+    description: "36 Cores / 72 Threads - 3.0/3.6Ghz (Intel Gold 6354 ou equivalent) - 768Go ram"
+    type: "baremetal"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 2274.89
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 1706.17€
+    specs:
+      cores: 36
+      threads: 72
+      cpu_model: "Intel Gold 6354"
+      cpu_base_freq: 3.0
+      cpu_turbo_freq: 3.6
+      ram: 768
+    metadata:
+      snc: "EN COURS"
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:bm:perf3:v3"
+    name: "BM:V3:PERF3"
+    description: "56 Cores / 112 Threads - 2.6/3.5Ghz (Intel 6348 ou equivalent) - 1.5 To ram"
+    type: "baremetal"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 3283.58
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 2462.68€
+    specs:
+      cores: 56
+      threads: 112
+      cpu_model: "Intel 6348"
+      cpu_base_freq: 2.6
+      cpu_turbo_freq: 3.5
+      ram: 1536
+    metadata:
+      snc: "EN COURS"
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:bm:perf4:v3"
+    name: "BM:V3:PERF4"
+    description: "32 Cores / 64 Threads - 2.5/4.1Ghz (Intel 6426Y ou equivalent) - 512Go - 2 x NVIDIA L40S 48Go"
+    type: "baremetal"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 3147.60
+      engagement: "12 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 2360.70€
+    specs:
+      cores: 32
+      threads: 64
+      cpu_model: "Intel 6426Y"
+      cpu_base_freq: 2.5
+      cpu_turbo_freq: 4.1
+      ram: 512
+      gpu:
+        model: "NVIDIA L40S"
+        memory: 48
+        count: 2
+    metadata:
+      snc: "EN COURS"
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:bm:perf5:v3"
+    name: "BM:V3:PERF5"
+    description: "32 Cores / 64 Threads - 2.5/4.1Ghz (Intel 6426Y ou equivalent) - 512Go - 2 x NVIDIA H100 80Go"
+    type: "baremetal"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 6141.60
+      engagement: "24 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 4606.20€
+    specs:
+      cores: 32
+      threads: 64
+      cpu_model: "Intel 6426Y"
+      cpu_base_freq: 2.5
+      cpu_turbo_freq: 4.1
+      ram: 512
+      gpu:
+        model: "NVIDIA H100"
+        memory: 80
+        count: 2
+    metadata:
+      snc: "EN COURS"
+      version: "v3"

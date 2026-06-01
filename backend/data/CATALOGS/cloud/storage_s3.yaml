@@ -1,0 +1,39 @@
+# Prix du stockage objet S3
+version: "S1-2026"
+metadata:
+  category: "storage"
+  type: "object"
+  description: "Prix du stockage objet S3 avec redondance sur 3 zones"
+  default_discount: 25
+  status: "active"
+
+items:
+  - sku: "csp:fr1:storage:object:perf:v1"
+    name: "Stockage S3 - Région FR1"
+    description: "Redondance 3 zones de disponibilité - facturation mensuelle ramenée au Gio/heure - 730h/mois"
+    type: "object"
+    unit: "Gio"
+    base_quantity: 1
+    pricing:
+      public_price: 0.018
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 0.0135€
+    specs:
+      storage_type: "S3"
+      redundancy_zones: 3
+      hours_per_month: 730
+      traffic:
+        internal_in: 
+          sku: "csp:fr1:storage:object:bandwidth:in"
+          included: true
+        internal_out:
+          sku: "csp:fr1:storage:object:bandwidth:out"
+          included: true
+        public_in:
+          sku: "csp:fr1:storage:object:bandwidth:internet:in"
+          included: true
+    metadata:
+      snc: true
+      version: "v1"

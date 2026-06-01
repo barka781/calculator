@@ -1,0 +1,65 @@
+# Prix des services Kubernetes Managé
+version: "S1-2026"
+metadata:
+  category: "paas"
+  type: "kubernetes"
+  description: "Prix des services Kubernetes Managé (Cluster managé)"
+  default_discount: 0
+  status: "active"
+
+items:
+  - sku: "msp:paas:k8s:cluster:prod:v1"
+    name: "Kubernetes Managé - Production"
+    description: "Cluster Production incluant 3 Worker Nodes"
+    type: "cluster"
+    unit: "cluster virtuel"
+    base_quantity: 1
+    pricing:
+      public_price: 2250.00
+      engagement: "1 mois"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "msp:paas:k8s:cluster:dev:v1"
+    name: "Kubernetes Managé - Dev/Test/Recette"
+    description: "Cluster Hors-Production incluant 3 Worker Nodes"
+    type: "cluster"
+    unit: "cluster virtuel"
+    base_quantity: 1
+    pricing:
+      public_price: 1500.00
+      engagement: "1 mois"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "msp:paas:k8s:node:prod:v1"
+    name: "Worker Node Additionnel - Production"
+    description: "Worker Node supplémentaire pour cluster de Production"
+    type: "node"
+    unit: "worker node additionnel"
+    base_quantity: 1
+    pricing:
+      public_price: 450.00
+      engagement: "1 mois"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "msp:paas:k8s:node:dev:v1"
+    name: "Worker Node Additionnel - Dev/Test/Recette"
+    description: "Worker Node supplémentaire pour cluster Hors-Production"
+    type: "node"
+    unit: "worker node additionnel"
+    base_quantity: 1
+    pricing:
+      public_price: 300.00
+      engagement: "1 mois"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"

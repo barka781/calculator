@@ -1,0 +1,49 @@
+# Prix du stockage de masse
+version: "S1-2026"
+metadata:
+  category: "storage"
+  type: "mass"
+  description: "Prix du stockage mécanique pour données froides et backup"
+  default_discount: 25
+  status: "active"
+
+items:
+  - sku: "csp:fr1:iaas:storage:bloc:mass:v1"
+    name: "Datastore MassStorage"
+    description: "Stockage mécanique pour données froides"
+    type: "mass"
+    unit: "Tio"
+    base_quantity: 1
+    pricing:
+      public_price: 23.94
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 17.96€
+    specs:
+      storage_type: "HDD"
+      replication: "synchronous"
+      usage: "cold_data"
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:iaas:storage:backup:v1"
+    name: "Archivages et backup"
+    description: "Stockage mécanique pour sauvegardes et archivage"
+    type: "mass"
+    unit: "Tio"
+    base_quantity: 1
+    pricing:
+      public_price: 23.94
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 17.96€
+    specs:
+      storage_type: "HDD"
+      replication: "synchronous"
+      usage: "backup_archive"
+    metadata:
+      snc: true
+      version: "v1"

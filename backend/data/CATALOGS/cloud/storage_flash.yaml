@@ -1,0 +1,109 @@
+# Prix du stockage Flash
+version: "S1-2026"
+metadata:
+  category: "storage"
+  type: "flash"
+  description: "Prix du stockage Flash avec différents niveaux de performance"
+  default_discount: 25
+  status: "active"
+
+items:
+  - sku: "csp:fr1:iaas:storage:bloc:live:v1"
+    name: "Datastore Essentiel"
+    description: "Stockage Flash - 500 IOPS/To"
+    type: "flash"
+    unit: "Gio"
+    base_quantity: 1
+    pricing:
+      public_price: 0.0588
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 0.0441€
+    specs:
+      iops_per_tb: 500
+      storage_type: "Flash"
+      replication: "synchronous"  # Réplication synchrone entre baies
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:iaas:storage:bloc:medium:v1"
+    name: "Datastore Standard"
+    description: "Stockage Flash - 1500 IOPS/To"
+    type: "flash"
+    unit: "Gio"
+    base_quantity: 1
+    pricing:
+      public_price: 0.0756
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 0.0567€
+    specs:
+      iops_per_tb: 1500
+      storage_type: "Flash"
+      replication: "synchronous"
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:iaas:storage:bloc:premium:v1"
+    name: "Datastore Premium"
+    description: "Stockage Flash - 3000 IOPS/To"
+    type: "flash"
+    unit: "Gio"
+    base_quantity: 1
+    pricing:
+      public_price: 0.1176
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 0.0882€
+    specs:
+      iops_per_tb: 3000
+      storage_type: "Flash"
+      replication: "synchronous"
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:iaas:storage:bloc:enterprise:v1"
+    name: "Datastore Enterprise"
+    description: "Stockage Flash - 7500 IOPS/To"
+    type: "flash"
+    unit: "Gio"
+    base_quantity: 1
+    pricing:
+      public_price: 0.1428
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 0.1071€
+    specs:
+      iops_per_tb: 7500
+      storage_type: "Flash"
+      replication: "synchronous"
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:iaas:storage:bloc:ultra:v1"
+    name: "Datastore Ultra"
+    description: "Stockage Flash - 15000 IOPS/To"
+    type: "flash"
+    unit: "Gio"
+    base_quantity: 1
+    pricing:
+      public_price: 0.2940
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 0.2205€
+    specs:
+      iops_per_tb: 15000
+      storage_type: "Flash"
+      replication: "synchronous"
+    metadata:
+      snc: true
+      version: "v1"

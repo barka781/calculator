@@ -1,0 +1,62 @@
+version: "S1-2026"
+metadata:
+  category: "llmaas"
+  type: "api"
+  description: "Prix des services LLMaaS"
+  status: "active"
+
+items:
+  - sku: "csp:llmaas:input:v1"
+    name: "LLM Token Input"
+    description: "Prix par million de tokens en entrée"
+    type: "llm"
+    unit: "Million de tokens"
+    base_quantity: 1000000
+    pricing:
+      public_price: 0.9
+      engagement: "Aucun"
+      min_quantity: 1
+
+  - sku: "csp:llmaas:output:v1"
+    name: "LLM Token Output"
+    description: "Prix par million de tokens en sortie"
+    type: "llm"
+    unit: "Million de tokens"
+    base_quantity: 1000000
+    pricing:
+      public_price: 4.0
+      engagement: "Aucun"
+      min_quantity: 1
+
+  - sku: "csp:llmaas:input:reasonning:v1"
+    name: "LLM Token Reasoning"
+    description: "Prix par million de tokens de raisonnement"
+    type: "llm"
+    unit: "Million de tokens"
+    base_quantity: 1000000
+    pricing:
+      public_price: 21.0
+      engagement: "Aucun"
+      min_quantity: 1
+
+  - sku: "csp:llmaas:asr:v1"
+    name: "ASR Time"
+    description: "Prix par minute audio transcrite"
+    type: "asr"
+    unit: "Minute"
+    base_quantity: 1
+    pricing:
+      public_price: 0.01
+      engagement: "Aucun"
+      min_quantity: 1
+
+  - sku: "csp:llmaas:tts:v1"
+    name: "TTS Time"
+    description: "Prix par minute texte vers voix"
+    type: "tts"
+    unit: "Minute"
+    base_quantity: 1
+    pricing:
+      public_price: 0.01
+      engagement: "Aucun"
+      min_quantity: 1

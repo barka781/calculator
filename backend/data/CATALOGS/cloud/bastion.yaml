@@ -1,0 +1,33 @@
+# Prix du service Bastion
+version: "S1-2026"
+metadata:
+  category: "security"
+  type: "bastion"
+  description: "Prix du service Bastion SSH & RDP"
+  default_discount: 25
+  status: "active"
+
+items:
+  - sku: "cmp:bastion:appliance:std:v1"
+    name: "Bastion Cloud Temple SSH & RDP"
+    description: "Appliance Bastion Cloud Temple SSH & RDP - Recording H264 - 50 IPs"
+    type: "bastion"
+    unit: "appliances"
+    base_quantity: 1
+    pricing:
+      public_price: 276.00
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 207.00€
+    specs:
+      protocols: ["SSH", "RDP"]
+      recording: "H264"
+      max_ips: 50
+      features:
+        - "Session recording"
+        - "Access control"
+        - "Audit logs"
+    metadata:
+      snc: true
+      version: "v1"

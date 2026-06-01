@@ -1,0 +1,105 @@
+# Prix des load balancers
+version: "S1-2026"
+metadata:
+  category: "network"
+  type: "loadbalancer"
+  description: "Prix des load balancers HAProxy Aloha"
+  default_discount: 25
+  status: "active"
+
+items:
+  - sku: "csp:fr1:licence:lb:hap:1k"
+    name: "HAProxy Aloha - 1000 connexions"
+    description: "Max 1000 connexions / seconde"
+    type: "haproxy"
+    unit: "cluster virtuel"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      product: "HAProxy Aloha"
+      max_connections: 1000
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:licence:lb:hap:2k"
+    name: "HAProxy Aloha - 2000 connexions"
+    description: "Max 2000 connexions / seconde"
+    type: "haproxy"
+    unit: "cluster virtuel"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      product: "HAProxy Aloha"
+      max_connections: 2000
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:licence:lb:hap:4k"
+    name: "HAProxy Aloha - 4000 connexions"
+    description: "Max 4000 connexions / seconde"
+    type: "haproxy"
+    unit: "cluster virtuel"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      product: "HAProxy Aloha"
+      max_connections: 4000
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:licence:lb:hap:8k"
+    name: "HAProxy Aloha - 8000 connexions"
+    description: "Max 8000 connexions / seconde"
+    type: "haproxy"
+    unit: "cluster virtuel"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      product: "HAProxy Aloha"
+      max_connections: 8000
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:licence:lb:hap:16k"
+    name: "HAProxy Aloha - 16000 connexions"
+    description: "Max 16000 connexions / seconde"
+    type: "haproxy"
+    unit: "cluster virtuel"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      product: "HAProxy Aloha"
+      max_connections: 16000
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:licence:lb:hap:50k"
+    name: "HAProxy Aloha - 50000 connexions"
+    description: "Max 50000 connexions / seconde"
+    type: "haproxy"
+    unit: "cluster virtuel"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      product: "HAProxy Aloha"
+      max_connections: 50000
+    metadata:
+      snc: true
+      version: "v1"

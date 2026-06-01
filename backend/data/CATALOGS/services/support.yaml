@@ -1,0 +1,23 @@
+# Taux journaliers des prestations
+version: "S2-2024"
+metadata:
+  category: "services"
+  type: "support"
+  status: "active"
+
+items:
+  # Management
+  - sku: "csp:support:standard"
+    name: "Standard Support"
+    description: "Monitoring 24/7, 8H-18H (L-V), support 1h/mois"
+    type: "management"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 500.00
+  - sku: "csp:support:premium"
+    name: "Premium Support"
+    description: "Monitoring 24/7, 8H-18H (L-V), support 8h/mois, téléphone inclus"
+    type: "management"
+    unit: "24/7"
+    pricing:
+      public_price: 2500.00

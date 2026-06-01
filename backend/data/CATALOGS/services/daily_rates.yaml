@@ -1,0 +1,131 @@
+# Taux journaliers des prestations
+version: "S2-2024"
+metadata:
+  category: "services"
+  type: "daily_rates"
+  status: "active"
+
+items:
+  # Management
+  - sku: "tjm:am"
+    name: "Account Manager"
+    type: "management"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 700.00
+
+  - sku: "tjm:dp"
+    name: "Direction de projet"
+    type: "management"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 1200.00
+
+  - sku: "tjm:cp"
+    name: "Chef de projet"
+    type: "management"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 800.00
+
+  - sku: "tjm:sdm"
+    name: "Service Delivery Manager"
+    type: "management"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 700.00
+
+  # Technique
+  - sku: "tjm:adm"
+    name: "Administrateur système"
+    type: "technical"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 450.00
+
+  - sku: "tjm:dev:back"
+    name: "Backend Developer"
+    type: "development"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 800.00
+
+  - sku: "tjm:dev:front"
+    name: "Frontend Developer"
+    type: "development"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 850.00
+
+  - sku: "tjm:devops"
+    name: "Cloud DevOps"
+    type: "technical"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 700.00
+
+  - sku: "tjm:tech"
+    name: "Technicien, proximité"
+    type: "technical"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 390.00
+
+  - sku: "tjm:eng"
+    name: "Ingénieur de production"
+    type: "technical"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 650.00
+
+  # Expertise
+  - sku: "tjm:expert"
+    name: "Experts (Expert Microsoft, Linux, DBA Oracle, SQL Server)"
+    type: "expertise"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 700.00
+
+  - sku: "tjm:cloud:expert"
+    name: "Infrastructure Specialist"
+    type: "expertise"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 1200.00
+
+  # Sécurité
+  - sku: "tjm:sec:cp"
+    name: "Chef de projet Sécurité"
+    type: "security"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 950.00
+
+  - sku: "tjm:sec:consultant"
+    name: "Consultant sécurité"
+    type: "security"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 850.00
+
+  - sku: "tjm:sec:leadcloudarch"
+    name: "Consultant Senior Architecture Cloud"
+    type: "security"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 1200.00
+
+  - sku: "tjm:sec:leadauditor"
+    name: "Consultant Senior Lead Auditor"
+    type: "security"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 850.00
+
+  # Autres
+  - sku: "tjm:nothing"
+    name: "Pas de profil"
+    type: "other"
+    unit: "Jour ouvré"
+    pricing:
+      public_price: 0.00

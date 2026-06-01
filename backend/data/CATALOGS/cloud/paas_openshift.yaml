@@ -1,0 +1,351 @@
+# Prix des services OpenShift
+version: "S1-2026"
+metadata:
+  category: "paas"
+  type: "openshift"
+  description: "Prix des services OpenShift 4 avec Data Foundations"
+  default_discount: 25
+  status: "active"
+
+items:
+  # Plan de contrôle - Réservation 12 mois
+  - sku: "csp:fr1:paas:oshift:plan:res12:v2"
+    name: "Plan de contrôle - 3 nœuds - Région FR1"
+    description: "Plan de contrôle OpenShift en réservation 12 mois"
+    type: "control_plane"
+    unit: "plan dédié"
+    base_quantity: 1
+    pricing:
+      public_price: 1956.81
+      engagement: "12 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 1467.61€
+    specs:
+      nodes: 3
+      reservation: true
+    metadata:
+      snc: true
+      version: "v1"
+
+  # Workers nodes - Réservation 12 mois
+  - sku: "csp:fr1:paas:oshift:wkr:tiny:res12:v2"
+    name: "Worker Nodes TINY"
+    description: "3 x (10 cores / 20 threads - 64 Go de ram - 512 Gio FLASH 1500 iops)"
+    type: "worker"
+    unit: "workers dédiés"
+    base_quantity: 3
+    pricing:
+      public_price: 834.62
+      engagement: "12 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 625.96€
+    specs:
+      nodes: 3
+      cores_per_node: 10
+      threads_per_node: 20
+      ram_per_node: 64
+      storage_per_node: 512
+      storage_iops: 1500
+      reservation: true
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:paas:oshift:wkr:small:res12:v2"
+    name: "Worker Nodes SMALL"
+    description: "3 x (20 cores / 40 threads - 128 Go de ram - 512 Gio FLASH 1500 iops)"
+    type: "worker"
+    unit: "workers dédiés"
+    base_quantity: 3
+    pricing:
+      public_price: 2756.21
+      engagement: "12 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 2067.16€
+    specs:
+      nodes: 3
+      cores_per_node: 20
+      threads_per_node: 40
+      ram_per_node: 128
+      storage_per_node: 512
+      storage_iops: 1500
+      reservation: true
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:paas:oshift:wkr:std:res12:v2"
+    name: "Worker Nodes STANDARD"
+    description: "3 x (32 cores / 64 threads - 384 Go de ram - 512 Gio FLASH 1500 iops)"
+    type: "worker"
+    unit: "workers dédiés"
+    base_quantity: 3
+    pricing:
+      public_price: 5812.82
+      engagement: "12 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 4359.62€
+    specs:
+      nodes: 3
+      cores_per_node: 32
+      threads_per_node: 64
+      ram_per_node: 384
+      storage_per_node: 512
+      storage_iops: 1500
+      reservation: true
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:paas:oshift:wkr:adv:res12:v2"
+    name: "Worker Nodes ADVANCED"
+    description: "3 x (48 cores / 96 threads - 768 Go de ram - 512 Gio FLASH 1500 iops)"
+    type: "worker"
+    unit: "workers dédiés"
+    base_quantity: 3
+    pricing:
+      public_price: 8413.27
+      engagement: "12 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 6309.95€
+    specs:
+      nodes: 3
+      cores_per_node: 48
+      threads_per_node: 96
+      ram_per_node: 768
+      storage_per_node: 512
+      storage_iops: 1500
+      reservation: true
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:paas:oshift:wkr:perf:res12:v2"
+    name: "Worker Nodes PERF"
+    description: "3 x (56 cores / 112 threads - 1.5 To de ram - 512 Gio FLASH 1500 iops)"
+    type: "worker"
+    unit: "workers dédiés"
+    base_quantity: 3
+    pricing:
+      public_price: 13835.78
+      engagement: "12 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 10376.84€
+    specs:
+      nodes: 3
+      cores_per_node: 56
+      threads_per_node: 112
+      ram_per_node: 1536
+      storage_per_node: 512
+      storage_iops: 1500
+      reservation: true
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:paas:oshift:wkr:gpu:res12:v2"
+    name: "Worker Nodes GPU L40S"
+    description: "3 x (32 cores / 64 threads - 512 Go de ram - 512 Gio FLASH 1500 iops - 2xNVIDIA L40S 48GO)"
+    type: "worker"
+    unit: "workers dédiés + GPU"
+    base_quantity: 3
+    pricing:
+      public_price: 13378.32
+      engagement: "12 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 10033.74€
+    specs:
+      nodes: 3
+      cores_per_node: 32
+      threads_per_node: 64
+      ram_per_node: 512
+      storage_per_node: 512
+      storage_iops: 1500
+      gpu:
+        model: "NVIDIA L40S"
+        memory: 48
+        count: 2
+      reservation: true
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:paas:oshift:wkr:gpu:res24:v2"
+    name: "Worker Nodes GPU H100"
+    description: "3 x (32 cores / 64 threads - 512 Go de ram - 512 Gio FLASH 1500 iops - 2xNVIDIA H100 80GO)"
+    type: "worker"
+    unit: "workers dédiés + GPU"
+    base_quantity: 3
+    pricing:
+      public_price: 26954.41
+      engagement: "24 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 20215.81€
+    specs:
+      nodes: 3
+      cores_per_node: 32
+      threads_per_node: 64
+      ram_per_node: 512
+      storage_per_node: 512
+      storage_iops: 1500
+      gpu:
+        model: "NVIDIA H100"
+        memory: 80
+        count: 2
+      reservation: true
+    metadata:
+      snc: true
+      version: "v2"
+
+  # À la demande - 1 mois
+  - sku: "csp:fr1:paas:oshift:plan:payg:v1"
+    name: "Plan de contrôle - 3 nœuds - Région FR1"
+    description: "Plan de contrôle OpenShift à la demande"
+    type: "control_plane"
+    unit: "plan dédié"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      nodes: 3
+      reservation: false
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:paas:oshift:wkr:tiny:payg:v1"
+    name: "Worker Nodes TINY"
+    description: "3 x (10 cores / 20 threads - 64 Go de ram - 512 Gio FLASH 1500 iops)"
+    type: "worker"
+    unit: "workers dédiés"
+    base_quantity: 3
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      nodes: 3
+      cores_per_node: 10
+      threads_per_node: 20
+      ram_per_node: 64
+      storage_per_node: 512
+      storage_iops: 1500
+      reservation: false
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:paas:oshift:wkr:small:payg:v1"
+    name: "Worker Nodes SMALL"
+    description: "3 x (20 cores / 40 threads - 128 Go de ram - 512 Gio FLASH 1500 iops)"
+    type: "worker"
+    unit: "workers dédiés"
+    base_quantity: 3
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      nodes: 3
+      cores_per_node: 20
+      threads_per_node: 40
+      ram_per_node: 128
+      storage_per_node: 512
+      storage_iops: 1500
+      reservation: false
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:paas:oshift:wkr:std:payg:v1"
+    name: "Worker Nodes STANDARD"
+    description: "3 x (32 cores / 64 threads - 384 Go de ram - 512 Gio FLASH 1500 iops)"
+    type: "worker"
+    unit: "workers dédiés"
+    base_quantity: 3
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      nodes: 3
+      cores_per_node: 32
+      threads_per_node: 64
+      ram_per_node: 384
+      storage_per_node: 512
+      storage_iops: 1500
+      reservation: false
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:paas:oshift:wkr:adv:payg:v1"
+    name: "Worker Nodes ADVANCED"
+    description: "3 x (48 cores / 96 threads - 768 Go de ram - 512 Gio FLASH 1500 iops)"
+    type: "worker"
+    unit: "workers dédiés"
+    base_quantity: 3
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      nodes: 3
+      cores_per_node: 48
+      threads_per_node: 96
+      ram_per_node: 768
+      storage_per_node: 512
+      storage_iops: 1500
+      reservation: false
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:paas:oshift:wkr:perf:payg:v1"
+    name: "Worker Nodes PERF"
+    description: "3 x (56 cores / 112 threads - 1.5 To de ram - 512 Gio FLASH 1500 iops)"
+    type: "worker"
+    unit: "workers dédiés"
+    base_quantity: 3
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      nodes: 3
+      cores_per_node: 56
+      threads_per_node: 112
+      ram_per_node: 1536
+      storage_per_node: 512
+      storage_iops: 1500
+      reservation: false
+    metadata:
+      snc: true
+      version: "v1"
+
+  # Solution de backup Kubernetes
+  - sku: "csp:fr1:paas:kasten:3wkr:v1"
+    name: "VEEAM - KASTEN K10"
+    description: "Kubernetes data protection and application mobility"
+    type: "backup"
+    unit: "workers"
+    base_quantity: 3
+    pricing:
+      public_price: 540.00
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 405.00€
+    specs:
+      product: "Kasten K10"
+      vendor: "Veeam"
+      features:
+        - "Data protection"
+        - "Application mobility"
+    metadata:
+      snc: true
+      version: "v1"

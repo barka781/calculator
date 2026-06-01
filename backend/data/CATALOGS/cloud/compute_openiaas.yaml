@@ -1,0 +1,147 @@
+# Prix des ressources de calcul OpenIaaS
+version: "S1-2026"
+metadata:
+  category: "compute"
+  type: "openiaas"
+  description: "Prix des ressources de calcul OpenIaaS v3"
+  default_discount: 25
+  status: "active"
+
+items:
+  - sku: "csp:fr1:iaas:openiaas:eco:v3"
+    name: "OPENIAAS:V3:ECO"
+    description: "20 Cores / 40 Threads - 2.2/3.0Ghz (Intel Silver 4114 ou equivalent) - 384Go ram"
+    type: "openiaas"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 1357.62
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 1018.21€
+    specs:
+      cores: 20
+      threads: 40
+      cpu_model: "Intel Silver 4114"
+      cpu_base_freq: 2.2
+      cpu_turbo_freq: 3.0
+      ram: 384
+    metadata:
+      snc: "EN COURS"
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:openiaas:standard:v3"
+    name: "OPENIAAS:V3:STD"
+    description: "32 Cores / 64 Threads - 2.4/3.4Ghz (Intel Silver 4314 ou equivalent) - 384Go ram"
+    type: "openiaas"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 1500.48
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 1125.36€
+    specs:
+      cores: 32
+      threads: 64
+      cpu_model: "Intel Silver 4314"
+      cpu_base_freq: 2.4
+      cpu_turbo_freq: 3.4
+      ram: 384
+    metadata:
+      snc: "EN COURS"
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:openiaas:advance:v3"
+    name: "OPENIAAS:V3:ADV"
+    description: "48 Cores / 96 Threads - 2.8/3.5Ghz (Intel Gold 6342 ou equivalent) - 768Go ram"
+    type: "openiaas"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 2328.94
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 1746.71€
+    specs:
+      cores: 48
+      threads: 96
+      cpu_model: "Intel Gold 6342"
+      cpu_base_freq: 2.8
+      cpu_turbo_freq: 3.5
+      ram: 768
+    metadata:
+      snc: "EN COURS"
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:openiaas:perf1:v3"
+    name: "OPENIAAS:V3:PERF1"
+    description: "16 Cores / 32 Threads - 3.2/3.6Ghz (Intel 5315Y ou equivalent) - 384Go ram"
+    type: "openiaas"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 1712.05
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 1284.03€
+    specs:
+      cores: 16
+      threads: 32
+      cpu_model: "Intel 5315Y"
+      cpu_base_freq: 3.2
+      cpu_turbo_freq: 3.6
+      ram: 384
+    metadata:
+      snc: "EN COURS"
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:openiaas:perf2:v3"
+    name: "OPENIAAS:V3:PERF2"
+    description: "36 Cores / 72 Threads - 3.0/3.6Ghz (Intel Gold 6354 ou equivalent) - 768Go ram"
+    type: "openiaas"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 2676.34
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 2007.26€
+    specs:
+      cores: 36
+      threads: 72
+      cpu_model: "Intel Gold 6354"
+      cpu_base_freq: 3.0
+      cpu_turbo_freq: 3.6
+      ram: 768
+    metadata:
+      snc: "EN COURS"
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:openiaas:perf3:v3"
+    name: "OPENIAAS:V3:PERF3"
+    description: "56 Cores / 112 Threads - 2.6/3.5Ghz (Intel 6348 ou equivalent) - 1.5 To ram"
+    type: "openiaas"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 3863.03
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 2897.28€
+    specs:
+      cores: 56
+      threads: 112
+      cpu_model: "Intel 6348"
+      cpu_base_freq: 2.6
+      cpu_turbo_freq: 3.5
+      ram: 1536
+    metadata:
+      snc: "EN COURS"
+      version: "v3"

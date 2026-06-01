@@ -1,0 +1,69 @@
+# Prix des services de PRA et réplication
+version: "S1-2026"
+metadata:
+  category: "pra"
+  type: "replication"
+  description: "Prix des services de PRA et réplication inter-AZ"
+  default_discount: 25
+  status: "active"
+
+items:
+  - sku: "csp:fr1:iaas:storage:licence:globalmirror:v1"
+    name: "Global Mirror - Replication SAN inter-AZ"
+    description: "Replication SAN inter-AZ asynchrone"
+    type: "storage_replication"
+    unit: "Tio"
+    base_quantity: 1
+    pricing:
+      public_price: 624.00
+      engagement: "12 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 468.00€
+    specs:
+      replication_type: "asynchronous"
+      technology: "Global Mirror"
+      level: "storage"
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:iaas:vmware:licence:replication:v1"
+    name: "VMWARE - Replication machine virtuelle inter-AZ"
+    description: "Réplication de VM VMware entre zones"
+    type: "vm_replication"
+    unit: "vm"
+    base_quantity: 1
+    pricing:
+      public_price: 40.32
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 30.24€
+    specs:
+      replication_type: "asynchronous"
+      technology: "VMware Replication"
+      level: "vm"
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:iaas:openiaas:licence:replication:v1"
+    name: "OPENIAAS - Replication machine virtuelle inter-AZ"
+    description: "Réplication de VM OpenIaaS entre zones"
+    type: "vm_replication"
+    unit: "vm"
+    base_quantity: 1
+    pricing:
+      public_price: 4.80
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 3.60€
+    specs:
+      replication_type: "asynchronous"
+      technology: "OpenIaaS Replication"
+      level: "vm"
+    metadata:
+      snc: true
+      version: "v1"

@@ -1,0 +1,40 @@
+# Actes de service
+version: "S2-2024"
+metadata:
+  category: "services"
+  type: "service_acts"
+  status: "active"
+
+items:
+  - sku: "tjm:act:simple"
+    name: "Demande de service simple"
+    description: "< 15 minutes en heures ouvrées"
+    type: "service_request"
+    unit: "Acte"
+    pricing:
+      public_price: 38.00
+    specs:
+      duration_max: 15
+      duration_unit: "minutes"
+
+  - sku: "tjm:act:moyen"
+    name: "Demande de service moyenne"
+    description: "< 30 minutes en heures ouvrées"
+    type: "service_request"
+    unit: "Acte"
+    pricing:
+      public_price: 58.00
+    specs:
+      duration_max: 30
+      duration_unit: "minutes"
+
+  - sku: "tjm:act:complexe"
+    name: "Demande de service complexe"
+    description: "< 1 heure ouvrée"
+    type: "service_request"
+    unit: "Acte"
+    pricing:
+      public_price: 90.00
+    specs:
+      duration_max: 60
+      duration_unit: "minutes"

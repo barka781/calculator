@@ -1,0 +1,9 @@
+{
+  "name": "cloud-temple-calculator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloud Temple Calculator development launcher",
+  "scripts": {
+    "start": "node scripts/dev-start.js"
+  }
+}

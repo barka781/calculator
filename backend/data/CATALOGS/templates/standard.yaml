@@ -1,0 +1,22 @@
+# Template standard pour une unité d'œuvre
+template:
+  sku: ""                   # SKU unique du produit
+  name: ""                  # Nom commercial
+  description: ""           # Description détaillée
+  category: ""             # Catégorie principale (compute, storage, network, paas)
+  type: ""                 # Sous-catégorie (vmware, openiaas, flash, etc.)
+  unit: ""                 # Unité de facturation
+  base_quantity: 1         # Quantité de base (par exemple 100 pour Mbps)
+  
+  pricing:
+    public_price: 0.0      # Prix public HT
+    engagement: "1 mois"   # Durée d'engagement minimale
+    min_quantity: 1        # Quantité minimale
+    partner_discount: 0    # Remise partenaire en %
+    
+  specs: {}               # Spécifications techniques variables selon le type
+    
+  metadata:
+    snc: true            # Qualification SecNumCloud
+    version: ""          # Version du produit
+    status: "active"     # Status (active, deprecated, coming_soon)

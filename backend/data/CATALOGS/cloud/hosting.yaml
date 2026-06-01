@@ -1,0 +1,305 @@
+# Prix des services d'hébergement physique
+version: "S1-2026"
+metadata:
+  category: "housing"
+  type: "physical"
+  description: "Prix de l'hébergement physique en zone non SecNumCloud"
+  default_discount: 25
+  status: "active"
+
+items:
+  # Hébergement en baie mutualisée
+  - sku: "csp:fr1:housing:shared:basic:v1"
+    name: "Hébergement 1U mutualisé - Basic"
+    description: "Network Appliance - 150W (1 C19)"
+    type: "shared_rack"
+    unit: "U"
+    base_quantity: 1
+    pricing:
+      public_price: 188.40
+      engagement: "12 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 141.30€
+    specs:
+      height: 1
+      power: 150
+      power_feeds: 1
+      connector: "C19"
+      type: "network_appliance"
+    metadata:
+      snc: false
+      version: "v1"
+
+  - sku: "csp:fr1:housing:shared:premium:v1"
+    name: "Hébergement 1U mutualisé - Premium"
+    description: "Network Appliance - 300W (2 C19)"
+    type: "shared_rack"
+    unit: "U"
+    base_quantity: 1
+    pricing:
+      public_price: 349.20
+      engagement: "12 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 261.90€
+    specs:
+      height: 1
+      power: 300
+      power_feeds: 2
+      connector: "C19"
+      type: "network_appliance"
+    metadata:
+      snc: false
+      version: "v1"
+
+  - sku: "csp:fr1:housing:shared:srv:basic:v1"
+    name: "Hébergement 2U mutualisé - Server Basic"
+    description: "Server - 400W (2 C19)"
+    type: "shared_rack"
+    unit: "U"
+    base_quantity: 2
+    pricing:
+      public_price: 456.00
+      engagement: "12 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 342.00€
+    specs:
+      height: 2
+      power: 400
+      power_feeds: 2
+      connector: "C19"
+      type: "server"
+    metadata:
+      snc: false
+      version: "v1"
+
+  - sku: "csp:fr1:housing:shared:srv:premium:v1"
+    name: "Hébergement 2U mutualisé - Server Premium"
+    description: "Server - 800W (2 C19)"
+    type: "shared_rack"
+    unit: "U"
+    base_quantity: 2
+    pricing:
+      public_price: 684.00
+      engagement: "12 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 513.00€
+    specs:
+      height: 2
+      power: 800
+      power_feeds: 2
+      connector: "C19"
+      type: "server"
+    metadata:
+      snc: false
+      version: "v1"
+
+  # Baie complète
+  - sku: "csp:fr1:housing:dedicated:rack:v1"
+    name: "Hébergement baie 42U dédiée"
+    description: "42U dédiée - 3 Kw d'énergie sur 2 chaines électriques"
+    type: "dedicated_rack"
+    unit: "rack 42U"
+    base_quantity: 1
+    pricing:
+      public_price: 3582.00
+      engagement: "12 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 2686.50€
+    specs:
+      height: 42
+      power: 3000
+      power_feeds: 2
+      type: "dedicated"
+    metadata:
+      snc: false
+      version: "v1"
+
+  # Énergie complémentaire
+  - sku: "csp:fr1:housing:dedicated:rack:2kw:v1"
+    name: "Energie complémentaire 2Kw"
+    description: "2 Kw d'énergie complémentaire"
+    type: "power"
+    unit: "Kwh"
+    base_quantity: 2
+    pricing:
+      public_price: 777.60
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 583.20€
+    specs:
+      power: 2000
+      type: "additional"
+    metadata:
+      snc: false
+      version: "v1"
+
+  # Connectivité
+  - sku: "csp:fr1:housing:shared:port1g:v1"
+    name: "Port 1 Gbps"
+    description: "Hébergement - 1 port - 1 Gbps"
+    type: "network"
+    unit: "port 1Gbps"
+    base_quantity: 1
+    pricing:
+      public_price: 13.20
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 9.90€
+    specs:
+      speed: 1
+      unit: "Gbps"
+      type: "access"
+    metadata:
+      snc: false
+      version: "v1"
+
+  - sku: "csp:fr1:housing:shared:port10g:v1"
+    name: "Port 10 Gbps"
+    description: "Hébergement - 1 port - 10 Gbps"
+    type: "network"
+    unit: "port 10Gbps"
+    base_quantity: 1
+    pricing:
+      public_price: 113.40
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 85.05€
+    specs:
+      speed: 10
+      unit: "Gbps"
+      type: "access"
+    metadata:
+      snc: false
+      version: "v1"
+
+  # Meet Me Room
+  - sku: "csp:fr1:housing:mmr:v1:1g"
+    name: "Meet Me Room 1G"
+    description: "Connexion lien privé en meet me room d'une AZ - 1 port 1Gbps"
+    type: "mmr"
+    unit: "accès"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      speed: 1
+      unit: "Gbps"
+      type: "mmr"
+    metadata:
+      snc: false
+      version: "v1"
+
+  - sku: "csp:fr1:housing:mmr:v1:10g"
+    name: "Meet Me Room 10G"
+    description: "Connexion lien privé en meet me room d'une AZ - 1 port 10Gbps"
+    type: "mmr"
+    unit: "accès"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      speed: 10
+      unit: "Gbps"
+      type: "mmr"
+    metadata:
+      snc: false
+      version: "v1"
+
+  # Liens dédiés inter-AZ
+  - sku: "csp:fr1:network:epl:1g:v1"
+    name: "Lien dédié inter-AZ 1G"
+    description: "Lien dédié inter AZ 1G ethernet (deux liens via deux chemins diversifiés)"
+    type: "dedicated_link"
+    unit: "forfait"
+    base_quantity: 1
+    pricing:
+      public_price: 1300.80
+      engagement: "36 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 975.60€
+    specs:
+      speed: 1
+      unit: "Gbps"
+      type: "ethernet"
+      redundancy: true
+      paths: 2
+    metadata:
+      snc: false
+      version: "v1"
+
+  - sku: "csp:fr1:network:epl:10g:v1"
+    name: "Lien dédié inter-AZ 10G"
+    description: "Lien dédié inter AZ 10G ethernet (deux liens via deux chemins diversifiés)"
+    type: "dedicated_link"
+    unit: "forfait"
+    base_quantity: 1
+    pricing:
+      public_price: 1347.60
+      engagement: "36 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 1010.70€
+    specs:
+      speed: 10
+      unit: "Gbps"
+      type: "ethernet"
+      redundancy: true
+      paths: 2
+    metadata:
+      snc: false
+      version: "v1"
+
+  - sku: "csp:fr1:network:fcpl:8g:v1"
+    name: "Lien dédié inter-AZ 8G FC"
+    description: "Lien dédié inter AZ 8G fiberchannel (deux liens via deux chemins diversifiés)"
+    type: "dedicated_link"
+    unit: "forfait"
+    base_quantity: 1
+    pricing:
+      public_price: 1372.80
+      engagement: "36 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 1029.60€
+    specs:
+      speed: 8
+      unit: "Gbps"
+      type: "fiberchannel"
+      redundancy: true
+      paths: 2
+    metadata:
+      snc: false
+      version: "v1"
+
+  - sku: "csp:fr1:network:fcpl:16g:v1"
+    name: "Lien dédié inter-AZ 16G FC"
+    description: "Lien dédié inter AZ 16G fiberchannel (deux liens via deux chemins diversifiés)"
+    type: "dedicated_link"
+    unit: "forfait"
+    base_quantity: 1
+    pricing:
+      public_price: 1524.00
+      engagement: "36 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 1143.00€
+    specs:
+      speed: 16
+      unit: "Gbps"
+      type: "fiberchannel"
+      redundancy: true
+      paths: 2
+    metadata:
+      snc: false
+      version: "v1"

@@ -1,0 +1,41 @@
+# Prix du socle SecNumCloud
+version: "S1-2026"
+metadata:
+  category: "socle"
+  description: "Prix du socle SecNumCloud (tenant, réseau)"
+  default_discount: 25  # Remise standard en %
+  status: "active"
+
+items:
+  # Tenant
+  - sku: "csp:tenant:v1"
+    name: "Activation d'un tenant"
+    description: "Création d'un tenant dédié"
+    type: "tenant"
+    unit: "Tenant"
+    base_quantity: 1
+    pricing:
+      public_price: 184.80
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Remise standard donnant un prix de 138.60€
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:iaas:az:v1"
+    name: "Activation d'une zone de disponibilité (AZ)"
+    description: "Ajout d'une AZ dans la région FR1"
+    type: "tenant"
+    unit: "AZ par tenant"
+    base_quantity: 1
+    pricing:
+      public_price: 151.20
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Remise standard donnant un prix de 113.40€
+    metadata:
+      snc: true
+      version: "v1"

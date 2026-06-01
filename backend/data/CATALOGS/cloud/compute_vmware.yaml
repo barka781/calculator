@@ -1,0 +1,195 @@
+# Prix des ressources de calcul VMware
+version: "S1-2026"
+metadata:
+  category: "compute"
+  type: "vmware"
+  description: "Prix des ressources de calcul VMware v3"
+  default_discount: 25
+  status: "active"
+
+items:
+  - sku: "csp:fr1:iaas:vmware:eco:v3"
+    name: "VMWARE:V3:ECO"
+    description: "20 Cores / 40 Threads - 2.2/3.0Ghz (Intel Silver 4114 ou equivalent) - 384Go ram"
+    type: "vmware"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 2951.05
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 2213.29€
+    specs:
+      cores: 20
+      threads: 40
+      cpu_model: "Intel Silver 4114"
+      cpu_base_freq: 2.2
+      cpu_turbo_freq: 3.0
+      ram: 384
+    metadata:
+      snc: true
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:vmware:standard:v3"
+    name: "VMWARE:V3:STD"
+    description: "32 Cores / 64 Threads - 2.4/3.4Ghz (Intel Silver 4314 ou equivalent) - 384Go ram"
+    type: "vmware"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 3806.83
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 2855.12€
+    specs:
+      cores: 32
+      threads: 64
+      cpu_model: "Intel Silver 4314"
+      cpu_base_freq: 2.4
+      cpu_turbo_freq: 3.4
+      ram: 384
+    metadata:
+      snc: true
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:vmware:advance:v3"
+    name: "VMWARE:V3:ADV"
+    description: "48 Cores / 96 Threads - 2.8/3.5Ghz (Intel Gold 6342 ou equivalent) - 768Go ram"
+    type: "vmware"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 5655.84
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 4241.88€
+    specs:
+      cores: 48
+      threads: 96
+      cpu_model: "Intel Gold 6342"
+      cpu_base_freq: 2.8
+      cpu_turbo_freq: 3.5
+      ram: 768
+    metadata:
+      snc: true
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:vmware:perf1:v3"
+    name: "VMWARE:V3:PERF1"
+    description: "16 Cores / 32 Threads - 3.2/3.6Ghz (Intel 5315Y ou equivalent) - 384Go ram"
+    type: "vmware"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 3676.33
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 2757.25€
+    specs:
+      cores: 16
+      threads: 32
+      cpu_model: "Intel 5315Y"
+      cpu_base_freq: 3.2
+      cpu_turbo_freq: 3.6
+      ram: 384
+    metadata:
+      snc: true
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:vmware:perf2:v3"
+    name: "VMWARE:V3:PERF2"
+    description: "36 Cores / 72 Threads - 3.0/3.6Ghz (Intel Gold 6354 ou equivalent) - 768Go ram"
+    type: "vmware"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 5267.65
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 3950.74€
+    specs:
+      cores: 36
+      threads: 72
+      cpu_model: "Intel Gold 6354"
+      cpu_base_freq: 3.0
+      cpu_turbo_freq: 3.6
+      ram: 768
+    metadata:
+      snc: true
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:vmware:perf3:v3"
+    name: "VMWARE:V3:PERF3"
+    description: "56 Cores / 112 Threads - 2.6/3.5Ghz (Intel 6348 ou equivalent) - 1.5 To ram"
+    type: "vmware"
+    unit: "Lame"
+    base_quantity: 1
+    pricing:
+      public_price: 7452.34
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 5589.26€
+    specs:
+      cores: 56
+      threads: 112
+      cpu_model: "Intel 6348"
+      cpu_base_freq: 2.6
+      cpu_turbo_freq: 3.5
+      ram: 1536
+    metadata:
+      snc: true
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:vmware:perf4:v3"
+    name: "VMWARE:V3:PERF4"
+    description: "32 Cores / 64 Threads - 2.5/4.1Ghz (Intel 6426Y ou equivalent) - 512Go - 2 x NVIDIA L40S 48Go"
+    type: "vmware"
+    unit: "Lame + 2xGPU"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      cores: 32
+      threads: 64
+      cpu_model: "Intel 6426Y"
+      cpu_base_freq: 2.5
+      cpu_turbo_freq: 4.1
+      ram: 512
+      gpu:
+        model: "NVIDIA L40S"
+        memory: 48
+        count: 2
+    metadata:
+      snc: true
+      version: "v3"
+
+  - sku: "csp:fr1:iaas:vmware:perf5:v3"
+    name: "VMWARE:V3:PERF5"
+    description: "32 Cores / 64 Threads - 2.5/4.1Ghz (Intel 6426Y ou equivalent) - 512Go - 2 x NVIDIA H100 80Go"
+    type: "vmware"
+    unit: "Lame + 2xGPU"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      cores: 32
+      threads: 64
+      cpu_model: "Intel 6426Y"
+      cpu_base_freq: 2.5
+      cpu_turbo_freq: 4.1
+      ram: 512
+      gpu:
+        model: "NVIDIA H100"
+        memory: 80
+        count: 2
+    metadata:
+      snc: true
+      version: "v3"

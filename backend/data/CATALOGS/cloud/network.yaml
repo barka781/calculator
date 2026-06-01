@@ -1,0 +1,48 @@
+# Unités d'œuvre Réseau
+version: "S1-2026"
+metadata:
+  category: "network"
+  type: "network"
+  status: "active"
+
+items:
+  # Internet
+  - sku: "csp:fr1:network:traffic:internet:v1"
+    name: "Internet - Bande passante garantie"
+    description: "Mbs garantis et burstable au 95 percentile"
+    type: "bandwidth"
+    unit: "Mbps"
+    base_quantity: 100
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    metadata:
+      snc: true
+      version: "v1"
+      status: "active"
+
+  # IP Addresses
+  - sku: "csp:fr1:network:ipv4:v2"
+    name: "IPv4 Publique dédiée"
+    type: "ip"
+    unit: "IPv4"
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    metadata:
+      snc: true
+      version: "v2"
+      status: "active"
+
+  # VLANs
+  - sku: "csp:fr1:network:vlan:v1"
+    name: "VLAN privé inter AZ"
+    type: "vlan"
+    unit: "Vlan"
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    metadata:
+      snc: true
+      version: "v1"
+      status: "active"

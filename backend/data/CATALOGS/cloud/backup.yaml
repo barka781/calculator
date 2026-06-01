@@ -1,0 +1,73 @@
+# Prix des services de sauvegarde
+version: "S1-2026"
+metadata:
+  category: "backup"
+  type: "backup"
+  description: "Prix des services de sauvegarde"
+  default_discount: 25
+  status: "active"
+
+items:
+  - sku: "csp:fr1:iaas:backup:vm:v1"
+    name: "Sauvegarde machine virtuelle"
+    description: "Sauvegarde d'une machine virtuelle (hors stockage)"
+    type: "vm_backup"
+    unit: "vm"
+    base_quantity: 1
+    pricing:
+      public_price: 12.00
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 9.00€
+    specs:
+      technology: "IBM Spectrum Protect Plus"
+      type: "virtual_machine"
+      storage_excluded: true
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:iaas:backup:sp:service:access:v1"
+    name: "Service de sauvegarde par agent"
+    description: "Appliance virtuelle pour sauvegarde par agent"
+    type: "agent_backup"
+    unit: "appliance"
+    base_quantity: 1
+    pricing:
+      public_price: 900.00
+      engagement: "12 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 675.00€
+    specs:
+      technology: "IBM Spectrum Protect Plus"
+      type: "agent_based"
+      includes_appliance: true
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:iaas:backup:sp:1tio:v1"
+    name: "Sauvegarde source par agent"
+    description: "1 To source sauvegardé incluant espace disque - 7j - 5s - 3m"
+    type: "agent_backup"
+    unit: "Tio source"
+    base_quantity: 1
+    pricing:
+      public_price: 468.00
+      engagement: "1 mois"
+      min_quantity: 1
+      discounts:
+        standard: 25  # Prix remisé : 351.00€
+    specs:
+      technology: "IBM Spectrum Protect Plus"
+      type: "agent_based"
+      retention:
+        daily: 7
+        weekly: 5
+        monthly: 3
+      includes_storage: true
+    metadata:
+      snc: true
+      version: "v1"

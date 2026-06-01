@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Licenses YAML Schema",
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["sku", "name", "vendor", "unit", "pricing"],
+        "properties": {
+          "sku": { "type": ["string", "number"] },
+          "name": { "type": "string" },
+          "vendor": { "type": "string" },
+          "edition": { "type": ["string", "null"] },
+          "description": { "type": ["string", "null"] },
+          "category": { "type": "string", "const": "licence" },
+          "type": { "type": ["string", "null"] },
+          "unit": { "type": "string" },
+          "pricing": {
+            "type": "object",
+            "required": ["public_price", "currency"],
+            "properties": {
+              "public_price": { "type": ["number", "string"] },
+              "currency": { "type": "string", "enum": ["EUR"] },
+              "term": { "type": "string", "enum": ["monthly", "annual", "multiyear"] },
+              "engagement": { "type": ["number", "string"] }
+            },
+            "additionalProperties": true
+          },
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "source": { "type": ["string", "null"] },
+              "version": { "type": ["string", "null"] },
+              "status": { "type": ["string", "null"], "enum": ["active", "deprecated", null] },
+              "tags": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    }
+  },
+  "required": ["items"],
+  "additionalProperties": false
+}

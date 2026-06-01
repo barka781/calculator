@@ -1,0 +1,87 @@
+# Prix des services IA
+version: "S1-2026"
+metadata:
+  category: "paas"
+  type: "ai"
+  description: "Prix des services IA (Watson X AI et OpenShift AI)"
+  default_discount: 25  # Sauf pour Watson X AI qui a des remises spécifiques
+  status: "active"
+
+items:
+  # Watson X AI - 24 mois
+  - sku: "csp:fr1:ia:watx:adv:v1"
+    name: "WATSON X IA - ADVANCED"
+    description: "2xNVIDIA L40S 48GO"
+    type: "watson"
+    unit: "2 GPU + licence"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      gpu:
+        model: "NVIDIA L40S"
+        memory: 48
+        count: 2
+      includes_license: true
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:ia:watx:perf:v1"
+    name: "WATSON X IA - PERF"
+    description: "2xNVIDIA H100 80GO"
+    type: "watson"
+    unit: "2 GPU + licence"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      gpu:
+        model: "NVIDIA H100"
+        memory: 80
+        count: 2
+      includes_license: true
+    metadata:
+      snc: true
+      version: "v1"
+
+  # OpenShift AI - 24 mois
+  - sku: "csp:fr1:ia:oai:adv:v1"
+    name: "OPENSHIFT AI - ADVANCED"
+    description: "2XNVIDIA L40S 48GO"
+    type: "openshift_ai"
+    unit: "2 GPU + licence"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      gpu:
+        model: "NVIDIA L40S"
+        memory: 48
+        count: 2
+      includes_license: true
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:ia:oai:perf:v1"
+    name: "OPENSHIFT AI - PERF"
+    description: "2xNVIDIA H100 80GO"
+    type: "openshift_ai"
+    unit: "2 GPU + licence"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      gpu:
+        model: "NVIDIA H100"
+        memory: 80
+        count: 2
+      includes_license: true
+    metadata:
+      snc: true
+      version: "v1"

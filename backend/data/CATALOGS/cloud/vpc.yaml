@@ -1,0 +1,235 @@
+# Prix des services Virtual Private Cloud et Private Backbone
+version: "S1-2026"
+metadata:
+  category: "network"
+  type: "vpc"
+  description: "Prix des services Virtual Private Cloud et Private Backbone"
+  default_discount: 0
+  status: "active"
+
+items:
+  # VPC
+  - sku: "csp:fr1:vpc:v1"
+    name: "VPC - Activation"
+    description: "Activation du service Virtual Private Cloud"
+    type: "vpc"
+    unit: "VPC"
+    base_quantity: 1
+    pricing:
+      public_price: 0.00
+      engagement: "1 heure"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:vpc:private-network:v1"
+    name: "VPC - Réseau privé"
+    description: "Réseau privé (Private Network)"
+    type: "vpc_network"
+    unit: "Réseau"
+    base_quantity: 1
+    pricing:
+      public_price: 0.0493
+      engagement: "1 heure"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:vpc:public-ipv4:v1"
+    name: "VPC - IPv4 Publique"
+    description: "Adresse IP Publique v4 (Floating IP)"
+    type: "ip"
+    unit: "IPv4"
+    base_quantity: 1
+    pricing:
+      public_price: 0.0674
+      engagement: "1 heure"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:vpc:public-ip-v6:v1"
+    name: "VPC - IPv6 Publique"
+    description: "Adresses IP Publiques v6 (/64)"
+    type: "ip"
+    unit: "/64 IPv6"
+    base_quantity: 1
+    pricing:
+      public_price: 0.0016
+      engagement: "1 heure"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:vpc:peering:v1"
+    name: "VPC - Peering"
+    description: "Peering inter-VPC (trafic inclus)"
+    type: "peering"
+    unit: "Peering"
+    base_quantity: 1
+    pricing:
+      public_price: 0.1013
+      engagement: "1 heure"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:vpc:vpn:v1"
+    name: "VPC - VPN"
+    description: "VPN site à site (trafic inclus)"
+    type: "vpn"
+    unit: "connexion"
+    base_quantity: 1
+    pricing:
+      public_price: 0.0739
+      engagement: "1 heure"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:vpc:external-gateway:v1"
+    name: "VPC - Passerelle Externe"
+    description: "Passerelle d'accès internet (trafic entrant inclus)"
+    type: "gateway"
+    unit: "Passerelle"
+    base_quantity: 1
+    pricing:
+      public_price: 0.0174
+      engagement: "1 heure"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:vpc:traffic-out:v1"
+    name: "VPC - Trafic Sortant"
+    description: "Trafic sortant (egress)"
+    type: "traffic"
+    unit: "Go"
+    base_quantity: 1
+    pricing:
+      public_price: 0.0840
+      engagement: "N/A"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:vpc:cloud-connect:100mbps:v1"
+    name: "VPC - Cloud Connect 100 Mbps"
+    description: "Passerelle Cloud Connect 100 Mbps (trafic inclus)"
+    type: "cloud_connect"
+    unit: "Connexion"
+    base_quantity: 1
+    pricing:
+      public_price: 0.2466
+      engagement: "1 heure"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:vpc:cloud-connect:1Gbps:v1"
+    name: "VPC - Cloud Connect 1 Gbps"
+    description: "Passerelle Cloud Connect 1 Gbps (trafic inclus)"
+    type: "cloud_connect"
+    unit: "Connexion"
+    base_quantity: 1
+    pricing:
+      public_price: 1.2329
+      engagement: "1 heure"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:vpc:cloud-connect:10Gbps:v1"
+    name: "VPC - Cloud Connect 10 Gbps"
+    description: "Passerelle Cloud Connect 10 Gbps (trafic inclus)"
+    type: "cloud_connect"
+    unit: "Connexion"
+    base_quantity: 1
+    pricing:
+      public_price: 6.1644
+      engagement: "1 heure"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  # Private Backbone
+  - sku: "csp:fr1:private-gateway:v1"
+    name: "Private Backbone"
+    description: "Réseau global dédié"
+    type: "backbone"
+    unit: "backbone"
+    base_quantity: 1
+    pricing:
+      public_price: 0.00
+      engagement: "1 heure"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:private-gateway:vlan:v1"
+    name: "Private Backbone - VLAN"
+    description: "1 VLAN 802.1q Multi AZ"
+    type: "vlan"
+    unit: "VLAN"
+    base_quantity: 1
+    pricing:
+      public_price: 0.0492
+      engagement: "1 heure"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:private-gateway:ipv4:v1"
+    name: "Private Backbone - IPv4"
+    description: "Adresse IP publique V4"
+    type: "ip"
+    unit: "IPv4"
+    base_quantity: 1
+    pricing:
+      public_price: 0.0674
+      engagement: "1 heure"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:private-gateway:ipv6:v1"
+    name: "Private Backbone - IPv6"
+    description: "Adresses IP publiques V6 (/64)"
+    type: "ip"
+    unit: "/64 IPv6"
+    base_quantity: 1
+    pricing:
+      public_price: 0.0016
+      engagement: "1 heure"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:private-gateway:traffic-out:v1"
+    name: "Private Backbone - Trafic Sortant"
+    description: "Trafic internet sortant (egress)"
+    type: "traffic"
+    unit: "Go"
+    base_quantity: 1
+    pricing:
+      public_price: 0.0840
+      engagement: "N/A"
+      min_quantity: 1
+    metadata:
+      snc: true
+      version: "v1"

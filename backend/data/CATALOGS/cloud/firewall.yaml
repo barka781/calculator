@@ -1,0 +1,158 @@
+# Prix des firewalls virtuels
+version: "S1-2026"
+metadata:
+  category: "security"
+  type: "firewall"
+  description: "Prix des firewalls virtuels (Fortigate et Stormshield)"
+  default_discount: 25
+  status: "active"
+
+items:
+  # Fortigate
+  - sku: "csp:fr1:licence:fw:ftg2"
+    name: "FIREWALL UTM - Fortigate Virtuel VM02V"
+    description: "Fortigate VM02V - sans vdom"
+    type: "fortigate"
+    unit: "noeud(s) virtuel(s)"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      model: "VM02V"
+      vdoms: 0
+      features: ["UTM"]
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:licence:fw:ftg4"
+    name: "FIREWALL UTM - Fortigate Virtuel VM04V"
+    description: "Fortigate VM04V - sans vdom"
+    type: "fortigate"
+    unit: "noeud(s) virtuel(s)"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      model: "VM04V"
+      vdoms: 0
+      features: ["UTM"]
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:licence:fw:ftg8"
+    name: "FIREWALL UTM - Fortigate Virtuel VM08V"
+    description: "Fortigate VM08V - sans vdom"
+    type: "fortigate"
+    unit: "noeud(s) virtuel(s)"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      model: "VM08V"
+      vdoms: 0
+      features: ["UTM"]
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:licence:fw:vdom"
+    name: "FIREWALL UTM - Fortigate - vdom complémentaires"
+    description: "Pack de 5 vdom complémentaires"
+    type: "fortigate"
+    unit: "vdom"
+    base_quantity: 5
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      type: "vdom_pack"
+      quantity: 5
+    metadata:
+      snc: true
+      version: "v1"
+
+  # Stormshield
+  - sku: "csp:fr1:licence:fw:eva1"
+    name: "FIREWALL UTM - STORMSHIELD virtuel EVA1"
+    description: "1Vcpu - 2Go RAM - 50 SSLVPN Users Max - 100 Tunnels"
+    type: "stormshield"
+    unit: "noeud(s) virtuel(s)"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      model: "EVA1"
+      vcpu: 1
+      ram: 2
+      sslvpn_users: 50
+      tunnels: 100
+      features: ["UTM"]
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:licence:fw:eva2"
+    name: "FIREWALL UTM - STORMSHIELD virtuel EVA2"
+    description: "2Vcpu - 3Go RAM - 512 SSLVPN Users Max - 150 Tunnels"
+    type: "stormshield"
+    unit: "noeud(s) virtuel(s)"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      model: "EVA2"
+      vcpu: 2
+      ram: 3
+      sslvpn_users: 512
+      tunnels: 150
+      features: ["UTM"]
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:licence:fw:eva3"
+    name: "FIREWALL UTM - STORMSHIELD virtuel EVA3"
+    description: "4Vcpu - 6Go RAM - 512 SSLVPN Users Max - 200 Tunnels"
+    type: "stormshield"
+    unit: "noeud(s) virtuel(s)"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      model: "EVA3"
+      vcpu: 4
+      ram: 6
+      sslvpn_users: 512
+      tunnels: 200
+      features: ["UTM"]
+    metadata:
+      snc: true
+      version: "v1"
+
+  - sku: "csp:fr1:licence:fw:eva4"
+    name: "FIREWALL UTM - STORMSHIELD virtuel EVA4"
+    description: "4Vcpu - 8Go RAM - 1024 SSLVPN Users Max - 250 Tunnels"
+    type: "stormshield"
+    unit: "noeud(s) virtuel(s)"
+    base_quantity: 1
+    status: "deprecated"
+    last_active_version: "S2-2024"
+    pricing: {}
+    specs:
+      model: "EVA4"
+      vcpu: 4
+      ram: 8
+      sslvpn_users: 1024
+      tunnels: 250
+      features: ["UTM"]
+    metadata:
+      snc: true
+      version: "v1"

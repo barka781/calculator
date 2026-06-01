@@ -1,0 +1,94 @@
+# Template pour les taux de services (TJM et actes)
+version: "S2-2024"
+metadata:
+  type: "service_rates"
+  description: "Template pour les taux journaliers et actes de service"
+  status: "active"
+
+# Configuration globale
+defaults:
+  currency: "EUR"
+  tax_rate: 20.0  # TVA standard
+  billing_increment: 0.5  # Facturation possible à la demi-journée
+  working_hours:
+    day_start: "09:00"
+    day_end: "18:00"
+    lunch_break: "1:00"
+
+# Définition des catégories de services
+categories:
+  - id: "management"
+    name: "Management"
+    description: "Profils de gestion et pilotage"
+  - id: "technical"
+    name: "Technique"
+    description: "Profils techniques et opérationnels"
+  - id: "expertise"
+    name: "Expertise"
+    description: "Experts et consultants seniors"
+  - id: "security"
+    name: "Sécurité"
+    description: "Profils sécurité et conformité"
+
+# Template pour un taux journalier
+daily_rate_template:
+  sku: ""                # Format: tjm:<type>:<specificity>
+  name: ""               # Nom du profil
+  category: ""           # Référence à une catégorie définie ci-dessus
+  description: ""        # Description détaillée du profil
+  unit: "Jour ouvré"    # Unité par défaut
+  min_engagement: 0.5    # Engagement minimum en jours
+  pricing:
+    public_price: 0.0    # TJM public HT
+    partner_discount: 0  # Remise partenaire en %
+  conditions:
+    cancellation_notice: 10  # Délai d'annulation en jours ouvrés
+    weekend_multiplier: 1.5  # Coefficient pour travail weekend
+    overtime_multiplier: 1.5 # Coefficient heures supplémentaires
+  skills:                # Liste des compétences requises
+    - skill: ""
+      level: ""         # junior, confirmed, senior, expert
+
+# Template pour un acte de service
+service_act_template:
+  sku: ""               # Format: act:<complexity>
+  name: ""              # Nom de l'acte
+  category: "act"       # Catégorie fixe pour les actes
+  description: ""       # Description détaillée
+  unit: "Acte"         # Unité par défaut
+  pricing:
+    public_price: 0.0   # Prix public HT
+    partner_discount: 0 # Remise partenaire en %
+  specs:
+    max_duration: 0     # Durée maximum en minutes
+    complexity: ""      # simple, medium, complex
+    included_tasks: []  # Liste des tâches incluses
+
+# Exemple d'utilisation pour un taux journalier
+example_daily_rate:
+  sku: "tjm:expert:cloud"
+  name: "Expert Cloud"
+  category: "expertise"
+  description: "Expert en architectures cloud et infrastructures"
+  pricing:
+    public_price: 1200.00
+  skills:
+    - skill: "Cloud Architecture"
+      level: "expert"
+    - skill: "Infrastructure Design"
+      level: "expert"
+
+# Exemple d'utilisation pour un acte
+example_service_act:
+  sku: "act:simple"
+  name: "Demande simple"
+  description: "Intervention < 15 minutes"
+  pricing:
+    public_price: 38.00
+  specs:
+    max_duration: 15
+    complexity: "simple"
+    included_tasks:
+      - "Diagnostic initial"
+      - "Action corrective simple"
+      - "Confirmation de résolution"
