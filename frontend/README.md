@@ -17,7 +17,11 @@ Le script libère d'abord les ports `8001` et `4173` si un ancien serveur écout
 
 Arrêter les deux serveurs : `Ctrl+C`.
 
-Le front est volontairement sans dépendance : HTML, CSS et JavaScript natif. Il consomme l'API backend locale par défaut sur `http://127.0.0.1:8001`, puis retombe en mode démo si l'API n'est pas disponible.
+Le front est volontairement sans dépendance : HTML, CSS et JavaScript natif. Il consomme l'API backend locale par défaut sur `http://127.0.0.1:8001`.
+
+Si l'API n'est pas disponible, aucun faux catalogue n'est affiché : l'interface
+montre une erreur explicite. L'état de synchronisation QuoteFlow est lu via
+`/api/sync/status` et peut être déclenché manuellement depuis l'interface.
 
 Pour cibler une autre API avant le chargement de `src/app.js` :
 

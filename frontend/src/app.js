@@ -3,79 +3,33 @@ const API_BASE =
   localStorage.getItem("calculatorApiBase") ||
   "http://127.0.0.1:8001";
 
-const demoProducts = [
-  {
-    sku: "csp:fr1:iaas:vmware:standard:v3",
-    name: "VMWARE:V3:STD",
-    family: "Compute",
-    type: "VMware",
-    unit: "Lame",
-    price: 3806.83,
-    defaultQuantity: 1,
-    minQuantity: 1,
-    description:
-      "32 cores / 64 threads, Intel Silver 4314, 384 Go RAM, plateforme SNC.",
-    tags: ["SNC", "384 Go", "Standard"],
-    accent: "blue",
-    source: "catalog",
-  },
-  {
-    sku: "csp:fr1:iaas:storage:bloc:premium:v1",
-    name: "Datastore Premium",
-    family: "Stockage",
-    type: "Flash",
-    unit: "Gio",
-    price: 0.1176,
-    defaultQuantity: 1024,
-    minQuantity: 1,
-    description: "Stockage Flash 3000 IOPS/To, réplication synchrone.",
-    tags: ["SNC", "3000 IOPS/To", "Bloc"],
-    accent: "mint",
-    source: "catalog",
-  },
-  {
-    sku: "9GS-00495",
-    name: "CIS Suite Datacenter Core",
-    family: "Licences",
-    type: "Microsoft SPLA",
-    unit: "2 Cores",
-    price: 56.54,
-    defaultQuantity: 8,
-    minQuantity: 1,
-    description: "Licence Microsoft SPLA mensuelle, édition Datacenter.",
-    tags: ["SPLA", "Datacenter", "Core"],
-    accent: "coral",
-    source: "license",
-  },
-];
-
 const state = {
   activeFamily: "Tous",
+  activeType: "Tous",
   apiError: "",
   apiOnline: false,
-  cart: [
-    { sku: "csp:fr1:iaas:vmware:standard:v3", quantity: 1, source: "auto" },
-    { sku: "csp:fr1:iaas:storage:bloc:premium:v1", quantity: 2048, source: "auto" },
-    { sku: "9GS-00495", quantity: 16, source: "auto" },
-  ],
+  cart: [],
   catalogTotal: 0,
   discount: 25,
   health: null,
   licenseTotal: 0,
   loading: true,
   period: 12,
-  products: demoProducts,
+  products: [],
   query: "",
   quote: null,
   quoteError: "",
   quoteLoading: false,
+  syncError: "",
+  syncing: false,
+  syncStatus: null,
 };
 
 const app = document.querySelector("#app");
 let quoteTimer = null;
-let quoteRequestId = 0;
 let searchTimer = null;
 let licenseSearchRequestId = 0;
+let quoteRequestId = 0;
 
 const familyOrder = [
   "Tous",
@@ -87,6 +41,14 @@ const familyOrder = [
   "Services",
   "Licences",
 ];
+
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 
 const formatMoney = (value, compact = false) =>
   new Intl.NumberFormat("fr-FR", {
@@ -100,16 +62,9 @@ const formatNumber = (value) =>
     Number(value) || 0,
   );
 
-const escapeHtml = (value) =>
-  String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-
 const buildUrl = (path, params = {}) => {
-  const url = new URL(path, API_BASE.endsWith("/") ? API_BASE : `${API_BASE}/`);
+  const base = API_BASE.endsWith("/") ? API_BASE : `${API_BASE}/`;
+  const url = new URL(path, base);
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== "") {
       url.searchParams.set(key, value);
@@ -168,17 +123,6 @@ const getFamily = (item) => {
   return item.category || "Services";
 };
 
-const getAccent = (family) =>
-  ({
-    Compute: "blue",
-    Stockage: "mint",
-    Sauvegarde: "amber",
-    Réseau: "violet",
-    PaaS: "blue",
-    Services: "amber",
-    Licences: "coral",
-  })[family] || "blue";
-
 const getDefaultQuantity = (unit, family) => {
   const normalized = String(unit || "").toLowerCase();
   if (normalized.includes("gio") || normalized.includes("go")) return 1024;
@@ -193,32 +137,36 @@ const compactTags = (values) =>
     .filter(Boolean)
     .map((value) => String(value))
     .filter((value, index, list) => list.indexOf(value) === index)
-    .slice(0, 3);
+    .slice(0, 4);
 
 const normalizeCatalogItem = (item) => {
   const family = getFamily(item);
   const summary = item.pricing_summary || {};
   const specs = item.specs || {};
   const metadata = item.metadata || {};
-  const unit = summary.unit || item.unit || "unité";
+  const unit = summary.unit || item.unit || "unite";
+  const price = Number(summary.public_price || item.pricing?.public_price || 0);
 
   return {
     sku: item.sku,
     name: item.name || item.title || item.sku,
+    category: item.category || "Catalogue",
     family,
-    type: item.sub_type || item.type || family,
+    type: item.type || family,
+    subType: item.sub_type || "",
     unit,
-    price: Number(summary.public_price || 0),
+    price,
     defaultQuantity: getDefaultQuantity(unit, family),
     minQuantity: Number(summary.min_quantity || 1),
-    description: item.description || `${item.type || family} · ${item.source_file || "catalogue"}`,
+    description: item.description || item.source_file || "",
     tags: compactTags([
+      item.type,
+      item.sub_type,
       metadata.snc ? "SNC" : "",
       specs.ram ? `${specs.ram} Go RAM` : "",
+      specs.cores ? `${specs.cores} cores` : "",
       specs.iops_per_tb ? `${specs.iops_per_tb} IOPS/To` : "",
-      item.type,
     ]),
-    accent: getAccent(family),
     source: "catalog",
   };
 };
@@ -226,15 +174,16 @@ const normalizeCatalogItem = (item) => {
 const normalizeLicenseItem = (item) => ({
   sku: item.sku,
   name: item.name || item.sku,
+  category: item.category || "Licence",
   family: "Licences",
   type: item.vendor || "Licence",
-  unit: item.unit || "unité",
+  subType: item.edition || "",
+  unit: item.unit || "unite",
   price: Number(item.price || item.pricing?.public_price || 0),
   defaultQuantity: getDefaultQuantity(item.unit, "Licences"),
   minQuantity: 1,
   description: item.description || [item.vendor, item.edition].filter(Boolean).join(" · "),
   tags: compactTags([item.vendor, item.edition, item.pricing?.term]),
-  accent: "coral",
   source: "license",
 });
 
@@ -246,14 +195,57 @@ const mergeProducts = (...groups) => {
     if (item?.sku) byKey.set(productKey(item), item);
   });
   return Array.from(byKey.values()).sort((a, b) =>
-    `${a.family}${a.name}`.localeCompare(`${b.family}${b.name}`, "fr"),
+    `${a.family}${a.type}${a.name}`.localeCompare(`${b.family}${b.type}${b.name}`, "fr"),
   );
 };
 
+const countBy = (items, getter) =>
+  items.reduce((acc, item) => {
+    const key = getter(item) || "Autres";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
 const getFamilies = () => {
-  const available = new Set(state.products.map((item) => item.family));
-  return familyOrder.filter((family) => family === "Tous" || available.has(family));
+  const counts = countBy(state.products, (item) => item.family);
+  return familyOrder
+    .filter((family) => family === "Tous" || counts[family])
+    .map((family) => ({
+      label: family,
+      count: family === "Tous" ? state.products.length : counts[family],
+    }));
 };
+
+const getTypes = () => {
+  const scoped =
+    state.activeFamily === "Tous"
+      ? state.products
+      : state.products.filter((item) => item.family === state.activeFamily);
+  const counts = countBy(scoped, (item) => item.type);
+  return [
+    { label: "Tous", count: scoped.length },
+    ...Object.entries(counts)
+      .sort(([a], [b]) => a.localeCompare(b, "fr"))
+      .map(([label, count]) => ({ label, count })),
+  ];
+};
+
+const matchesSearch = (item) => {
+  const query = state.query.trim().toLowerCase();
+  if (!query) return true;
+  return [item.name, item.sku, item.family, item.type, item.subType, item.description, ...item.tags]
+    .join(" ")
+    .toLowerCase()
+    .includes(query);
+};
+
+const getVisibleProducts = () =>
+  state.products.filter((item) => {
+    const familyMatch =
+      state.activeFamily === "Tous" || item.family === state.activeFamily;
+    const typeMatch = state.activeType === "Tous" || item.type === state.activeType;
+    return familyMatch && typeMatch && matchesSearch(item);
+  });
 
 const findProduct = (sku, preferredSource = "auto") => {
   if (preferredSource !== "auto") {
@@ -264,6 +256,8 @@ const findProduct = (sku, preferredSource = "auto") => {
   }
   return state.products.find((item) => item.sku === sku);
 };
+
+const isInCart = (sku) => state.cart.some((line) => line.sku === sku);
 
 const getCartRows = () =>
   state.cart
@@ -286,35 +280,15 @@ const getTotals = () => {
   const publicMonthly =
     state.quote?.monthly_public_total ??
     rows.reduce((sum, line) => sum + line.price * line.quantity, 0);
-  const periodTotal = state.quote?.period_discounted_total ?? monthly * state.period;
-  const savings = state.quote?.savings_total ?? (publicMonthly - monthly) * state.period;
 
   return {
     rows,
     monthly,
     publicMonthly,
-    periodTotal,
-    savings,
+    periodTotal: state.quote?.period_discounted_total ?? monthly * state.period,
+    savings: state.quote?.savings_total ?? (publicMonthly - monthly) * state.period,
   };
 };
-
-const matchesSearch = (item) => {
-  const query = state.query.trim().toLowerCase();
-  if (!query) return true;
-  return [item.name, item.sku, item.family, item.type, item.description]
-    .join(" ")
-    .toLowerCase()
-    .includes(query);
-};
-
-const getVisibleProducts = () =>
-  state.products.filter((item) => {
-    const familyMatch =
-      state.activeFamily === "Tous" || item.family === state.activeFamily;
-    return familyMatch && matchesSearch(item);
-  });
-
-const isInCart = (sku) => state.cart.some((line) => line.sku === sku);
 
 const scheduleQuote = () => {
   window.clearTimeout(quoteTimer);
@@ -324,6 +298,38 @@ const scheduleQuote = () => {
 const scheduleLicenseSearch = () => {
   window.clearTimeout(searchTimer);
   searchTimer = window.setTimeout(loadRemoteLicensesForSearch, 260);
+};
+
+const setFamily = (family) => {
+  state.activeFamily = family;
+  state.activeType = "Tous";
+  render();
+  if (family === "Licences") scheduleLicenseSearch();
+};
+
+const setType = (type) => {
+  state.activeType = type;
+  render();
+};
+
+const setQuery = (query) => {
+  state.query = query;
+  render();
+  scheduleLicenseSearch();
+};
+
+const setPeriod = (period) => {
+  state.period = Number(period);
+  state.quote = null;
+  render();
+  scheduleQuote();
+};
+
+const setDiscount = (discount) => {
+  state.discount = Number(discount);
+  state.quote = null;
+  render();
+  scheduleQuote();
 };
 
 const addToCart = (sku, source = "auto") => {
@@ -352,66 +358,15 @@ const updateQuantity = (sku, quantity) => {
   const line = state.cart.find((cartLine) => cartLine.sku === sku);
   const product = findProduct(sku, line?.source || "auto");
   if (!line || !product) return;
-  line.quantity = Math.max(product.minQuantity, Number(quantity) || 0);
+  line.quantity = Math.max(product.minQuantity, Number(quantity) || product.minQuantity);
   state.quote = null;
   render();
   scheduleQuote();
-};
-
-const setFamily = (family) => {
-  state.activeFamily = family;
-  render();
-  if (family === "Licences") scheduleLicenseSearch();
-};
-
-const setQuery = (query) => {
-  state.query = query;
-  render();
-  scheduleLicenseSearch();
-};
-
-const setPeriod = (period) => {
-  state.period = Number(period);
-  state.quote = null;
-  render();
-  scheduleQuote();
-};
-
-const setDiscount = (discount) => {
-  state.discount = Number(discount);
-  state.quote = null;
-  render();
-  scheduleQuote();
-};
-
-const hydrateSelectedLines = async () => {
-  const missingLines = state.cart.filter((line) => !findProduct(line.sku, line.source));
-  const hydrated = [];
-
-  for (const line of missingLines) {
-    try {
-      const catalogItem = await fetchJson(`api/catalog/${encodeURIComponent(line.sku)}`);
-      hydrated.push(normalizeCatalogItem(catalogItem));
-      continue;
-    } catch {
-      // Try licenses below.
-    }
-
-    try {
-      const licenseItem = await fetchJson(`api/licenses/${encodeURIComponent(line.sku)}`);
-      hydrated.push(normalizeLicenseItem(licenseItem));
-    } catch {
-      // The line will stay hidden until a matching item is available.
-    }
-  }
-
-  if (hydrated.length) {
-    state.products = mergeProducts(state.products, hydrated);
-  }
 };
 
 const loadInitialData = async () => {
   state.loading = true;
+  state.apiError = "";
   render();
 
   try {
@@ -422,20 +377,55 @@ const loadInitialData = async () => {
 
     state.health = health;
     state.catalogTotal = catalog.total || catalog.items?.length || 0;
+    state.licenseTotal = health.license_items || 0;
     state.apiOnline = true;
-    state.apiError = "";
+    state.syncStatus = health.sync || null;
     state.products = mergeProducts((catalog.items || []).map(normalizeCatalogItem));
-
-    await hydrateSelectedLines();
-    await loadRemoteLicensesForSearch(true);
   } catch (error) {
     state.apiOnline = false;
-    state.apiError = "Mode démo actif";
-    state.products = demoProducts;
+    state.apiError = `API indisponible sur ${API_BASE}`;
+    state.products = [];
+    state.catalogTotal = 0;
+    state.licenseTotal = 0;
+    state.quote = null;
   } finally {
     state.loading = false;
     render();
-    scheduleQuote();
+  }
+
+  if (state.apiOnline) {
+    loadSyncStatus();
+  }
+};
+
+const loadSyncStatus = async () => {
+  if (!state.apiOnline) return;
+  try {
+    state.syncError = "";
+    state.syncStatus = await fetchJson("api/sync/status");
+    render();
+  } catch {
+    state.syncError = "Statut de synchronisation indisponible";
+    render();
+  }
+};
+
+const runCatalogSync = async () => {
+  if (!state.apiOnline || state.syncing) return;
+  state.syncing = true;
+  state.syncError = "";
+  render();
+
+  try {
+    const result = await fetchJson("api/sync/catalog", { method: "POST" });
+    state.syncStatus = result.after || null;
+    await loadInitialData();
+  } catch (error) {
+    state.syncError = "Synchronisation impossible";
+    render();
+  } finally {
+    state.syncing = false;
+    render();
   }
 };
 
@@ -452,7 +442,7 @@ const loadRemoteLicensesForSearch = async (force = false) => {
   const requestId = ++licenseSearchRequestId;
   try {
     const response = await fetchJson("api/licenses", {
-      params: { q: query || undefined, limit: 80 },
+      params: { q: query || undefined, limit: 200 },
     });
     if (requestId !== licenseSearchRequestId) return;
     state.licenseTotal = response.total || response.items?.length || 0;
@@ -462,7 +452,7 @@ const loadRemoteLicensesForSearch = async (force = false) => {
     );
     render();
   } catch {
-    // Keep existing products; a transient license search failure should not disrupt quoting.
+    // Keep the catalog visible if license search fails.
   }
 };
 
@@ -494,10 +484,10 @@ const calculateRemoteQuote = async () => {
     });
     if (requestId !== quoteRequestId) return;
     state.quote = quote;
-  } catch (error) {
+  } catch {
     if (requestId !== quoteRequestId) return;
     state.quote = null;
-    state.quoteError = "Calcul local";
+    state.quoteError = "Calcul API impossible";
   } finally {
     if (requestId === quoteRequestId) {
       state.quoteLoading = false;
@@ -506,30 +496,31 @@ const calculateRemoteQuote = async () => {
   }
 };
 
-const productCard = (item) => {
+const itemRow = (item) => {
   const selected = isInCart(item.sku);
+  const tags = item.tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("");
   return `
-    <article class="product-card product-card--${escapeHtml(item.accent)}">
-      <div class="product-card__top">
-        <div>
-          <p class="eyebrow">${escapeHtml(item.family)} · ${escapeHtml(item.type)}</p>
-          <h3>${escapeHtml(item.name)}</h3>
+    <article class="catalog-row">
+      <div class="catalog-row__main">
+        <div class="catalog-row__title">
+          <strong>${escapeHtml(item.name)}</strong>
+          <code>${escapeHtml(item.sku)}</code>
         </div>
-        <div class="price-pill">
-          <strong>${formatMoney(item.price)}</strong>
-          <span>/${escapeHtml(item.unit)}</span>
-        </div>
+        <p>${escapeHtml(item.description || "Description non renseignee")}</p>
+        <div class="tag-row">${tags}</div>
       </div>
-      <p class="product-card__desc">${escapeHtml(item.description)}</p>
-      <div class="tag-row">
-        ${item.tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}
+      <div class="catalog-row__meta">
+        <span>${escapeHtml(item.family)}</span>
+        <span>${escapeHtml(item.type)}</span>
+        ${item.subType ? `<span>${escapeHtml(item.subType)}</span>` : ""}
       </div>
-      <div class="product-card__bottom">
-        <code>${escapeHtml(item.sku)}</code>
-        <button class="icon-action ${selected ? "is-selected" : ""}" data-add="${escapeHtml(item.sku)}" data-source="${escapeHtml(item.source)}" aria-label="Ajouter ${escapeHtml(item.name)}">
-          ${selected ? "Ajouté" : "Ajouter"}
-        </button>
+      <div class="catalog-row__price">
+        <strong>${formatMoney(item.price)}</strong>
+        <span>/${escapeHtml(item.unit)}</span>
       </div>
+      <button class="row-action ${selected ? "is-selected" : ""}" data-add="${escapeHtml(item.sku)}" data-source="${escapeHtml(item.source)}">
+        ${selected ? "Ajoute" : "Ajouter"}
+      </button>
     </article>
   `;
 };
@@ -539,13 +530,13 @@ const cartLine = (line) => `
     <div class="cart-line__main">
       <div>
         <strong>${escapeHtml(line.name)}</strong>
-        <span>${escapeHtml(line.family)} · ${escapeHtml(line.unit)}</span>
+        <span>${escapeHtml(line.sku)}</span>
       </div>
-      <button class="ghost-icon" data-remove="${escapeHtml(line.sku)}" aria-label="Retirer ${escapeHtml(line.name)}">×</button>
+      <button class="ghost-icon" data-remove="${escapeHtml(line.sku)}" aria-label="Retirer">×</button>
     </div>
     <div class="cart-line__controls">
       <label>
-        <span>Qté</span>
+        <span>Quantité</span>
         <input type="number" min="${line.minQuantity}" value="${line.quantity}" data-quantity="${escapeHtml(line.sku)}" />
       </label>
       <div class="line-total">
@@ -556,23 +547,41 @@ const cartLine = (line) => `
   </li>
 `;
 
+const sidebarButton = (item, active, attr) => `
+  <button class="${active ? "active" : ""}" ${attr}="${escapeHtml(item.label)}">
+    <span>${escapeHtml(item.label)}</span>
+    <strong>${formatNumber(item.count)}</strong>
+  </button>
+`;
+
 const render = () => {
   const activeElement = document.activeElement;
   const restoreSearch =
     activeElement && activeElement.matches && activeElement.matches(".search-box input");
   const searchSelection = restoreSearch ? activeElement.selectionStart : null;
+
   const visibleProducts = getVisibleProducts();
   const totals = getTotals();
-  const computeLines = totals.rows.filter((line) => line.family === "Compute");
-  const storageLines = totals.rows.filter((line) => line.family === "Stockage");
-  const licenseLines = totals.rows.filter((line) => line.family === "Licences");
   const families = getFamilies();
-  const statusLabel = state.apiOnline ? "API connectée" : state.apiError || "Connexion...";
+  const types = getTypes();
   const quoteMode = state.quoteLoading
-    ? "Calcul..."
+    ? "Calcul en cours"
     : state.quote
       ? "API"
-      : state.quoteError || "Local";
+      : state.quoteError || "Pret";
+  const sync = state.syncStatus;
+  const syncLabel = !state.apiOnline
+    ? "Non disponible"
+    : state.syncing
+      ? "Synchronisation..."
+      : sync?.is_synchronized
+        ? "Synchronisé"
+        : sync?.needs_sync
+          ? "À synchroniser"
+          : "Statut inconnu";
+  const syncDelta = sync?.delta
+    ? `${formatNumber(sync.delta.new_count || 0)} nouveaux · ${formatNumber(sync.delta.modified_count || 0)} modifiés · ${sync.delta.removed_count === null || sync.delta.removed_count === undefined ? "-" : formatNumber(sync.delta.removed_count)} supprimés`
+    : state.syncError || "Delta non chargé";
 
   app.innerHTML = `
     <main class="shell">
@@ -581,73 +590,93 @@ const render = () => {
           <span class="brand-mark">CT</span>
           <div>
             <strong>Cloud Temple Calculator</strong>
-            <span>Devis cloud public · S1-2026</span>
+            <span>Catalogue YAML QuoteFlow extrait en application autonome</span>
           </div>
         </div>
-        <div class="topbar__meta">
-          <span class="status-pill ${state.apiOnline ? "is-online" : "is-offline"}">${escapeHtml(statusLabel)}</span>
-          <span>${formatNumber(state.health?.catalog_items || state.catalogTotal || state.products.length)} offres</span>
-          <span>${state.period} mois</span>
-        </div>
+          <div class="topbar__meta">
+            <span class="status-pill ${state.apiOnline ? "is-online" : "is-offline"}">${state.apiOnline ? "API connectée" : "API hors ligne"}</span>
+            <span class="sync-pill ${sync?.is_synchronized ? "is-synced" : "needs-sync"}">${escapeHtml(syncLabel)}</span>
+            <span>${formatNumber(state.health?.catalog_items || state.catalogTotal)} produits</span>
+            <span>${formatNumber(state.health?.license_items || state.licenseTotal)} licences</span>
+          </div>
       </header>
 
-      <section class="workspace">
-        <section class="catalog-panel">
-          <div class="hero-grid">
-            <div class="hero-copy">
-              <p class="eyebrow">Quote builder</p>
-              <h1>Compose, chiffre, ajuste.</h1>
-              <p class="hero-copy__body">
-                Le catalogue Cloud Temple branché sur l'API locale, avec un devis recalculé à chaque variation.
-              </p>
-            </div>
-            <div class="quote-visual" aria-label="Architecture sélectionnée">
-              <div class="visual-node visual-node--compute">
-                <span>Compute</span>
-                <strong>${computeLines.length || 0}</strong>
-              </div>
-              <div class="visual-link"></div>
-              <div class="visual-node visual-node--storage">
-                <span>Stockage</span>
-                <strong>${formatNumber(
-                  storageLines.reduce((sum, line) => sum + line.quantity, 0),
-                )} Gio</strong>
-              </div>
-              <div class="visual-node visual-node--license">
-                <span>Licences</span>
-                <strong>${licenseLines.length || 0}</strong>
-              </div>
-            </div>
-          </div>
+      ${
+        state.apiOnline
+          ? ""
+          : `<section class="notice notice--error">
+              <strong>${escapeHtml(state.apiError || "API indisponible")}</strong>
+              <span>Le frontend n'affiche plus de faux catalogue de démo. Il attend le backend FastAPI du projet calculator.</span>
+            </section>`
+      }
 
+      <section class="workspace">
+        <aside class="filters-panel" aria-label="Filtres catalogue">
+          <div class="panel-heading">
+            <p class="eyebrow">Catalogue</p>
+            <h2>Filtres</h2>
+          </div>
+          <div class="filter-group">
+            <h3>Familles</h3>
+            ${families.map((family) => sidebarButton(family, state.activeFamily === family.label, "data-family")).join("")}
+          </div>
+          <div class="filter-group">
+            <h3>Types</h3>
+            ${types.slice(0, 16).map((type) => sidebarButton(type, state.activeType === type.label, "data-type")).join("")}
+          </div>
+        </aside>
+
+        <section class="catalog-panel">
           <div class="toolbar">
             <label class="search-box">
               <span>Recherche</span>
-              <input type="search" value="${escapeHtml(state.query)}" placeholder="SKU, service, licence..." />
+              <input type="search" value="${escapeHtml(state.query)}" placeholder="SKU, produit, service, licence..." />
             </label>
-            <div class="segmented" role="tablist" aria-label="Familles">
-              ${families
-                .map(
-                  (family) => `
-                    <button class="${state.activeFamily === family ? "active" : ""}" data-family="${escapeHtml(family)}">
-                      ${escapeHtml(family)}
-                    </button>
-                  `,
-                )
-                .join("")}
+            <div class="toolbar__summary">
+              <strong>${formatNumber(visibleProducts.length)}</strong>
+              <span>résultats affichés</span>
             </div>
+          </div>
+
+          <div class="stats-strip">
+            <div>
+              <span>Source</span>
+              <strong>${state.apiOnline ? "API locale" : "Non connectée"}</strong>
+            </div>
+            <div>
+              <span>Produits chargés</span>
+              <strong>${formatNumber(state.catalogTotal || state.health?.catalog_items || 0)}</strong>
+            </div>
+            <div>
+              <span>Licences disponibles</span>
+              <strong>${formatNumber(state.health?.license_items || state.licenseTotal || 0)}</strong>
+            </div>
+            <div>
+              <span>Base API</span>
+              <strong>${escapeHtml(API_BASE)}</strong>
+            </div>
+            <div>
+              <span>Synchro QuoteFlow</span>
+              <strong>${escapeHtml(syncDelta)}</strong>
+            </div>
+          </div>
+
+          <div class="sync-bar">
+            <div>
+              <strong>${escapeHtml(syncLabel)}</strong>
+              <span>${escapeHtml(state.syncError || "Source locale QuoteFlow vers backend/data")}</span>
+            </div>
+            <button class="secondary-action" data-sync-catalog ${state.apiOnline && !state.syncing ? "" : "disabled"}>
+              ${state.syncing ? "Synchronisation..." : "Synchroniser"}
+            </button>
           </div>
 
           ${
             state.loading
               ? `<div class="empty-state">Chargement du catalogue...</div>`
-              : `<div class="product-grid">
-                  ${
-                    visibleProducts.length
-                      ? visibleProducts.map(productCard).join("")
-                      : `<div class="empty-state">Aucune offre trouvée</div>`
-                  }
-                </div>`
+              : visibleProducts.length
+                ? `<div class="catalog-list">${visibleProducts.map(itemRow).join("")}</div>`
+                : `<div class="empty-state">${state.apiOnline ? "Aucun résultat pour ce filtre." : "Catalogue indisponible tant que l'API ne répond pas."}</div>`
           }
         </section>
 
@@ -683,10 +712,14 @@ const render = () => {
           </div>
 
           <ul class="cart-list">
-            ${totals.rows.length ? totals.rows.map(cartLine).join("") : `<li class="empty-cart">Aucune ligne sélectionnée</li>`}
+            ${totals.rows.length ? totals.rows.map(cartLine).join("") : `<li class="empty-cart">Sélectionnez une ligne catalogue pour commencer.</li>`}
           </ul>
 
           <div class="summary">
+            <div>
+              <span>Mensuel public</span>
+              <strong>${formatMoney(totals.publicMonthly)}</strong>
+            </div>
             <div>
               <span>Mensuel remisé</span>
               <strong>${formatMoney(totals.monthly)}</strong>
@@ -701,7 +734,7 @@ const render = () => {
             </div>
           </div>
 
-          <button class="primary-action" data-quote-refresh>Recalculer</button>
+          <button class="primary-action" data-quote-refresh ${state.cart.length ? "" : "disabled"}>Recalculer</button>
         </aside>
       </section>
     </main>
@@ -713,6 +746,10 @@ const render = () => {
 
   app.querySelectorAll("[data-family]").forEach((button) => {
     button.addEventListener("click", () => setFamily(button.dataset.family));
+  });
+
+  app.querySelectorAll("[data-type]").forEach((button) => {
+    button.addEventListener("click", () => setType(button.dataset.type));
   });
 
   app.querySelectorAll("[data-add]").forEach((button) => {
@@ -741,6 +778,10 @@ const render = () => {
 
   app.querySelector("[data-quote-refresh]").addEventListener("click", () =>
     calculateRemoteQuote(),
+  );
+
+  app.querySelector("[data-sync-catalog]").addEventListener("click", () =>
+    runCatalogSync(),
   );
 
   if (restoreSearch) {

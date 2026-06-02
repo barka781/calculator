@@ -9,10 +9,13 @@ from .architecture import (
     calculate_managed_service_offer,
 )
 from .catalog import find_catalog_item, load_catalog_items, search_catalog
-from .config import catalogs_dir, licences_file
+from .config import catalogs_dir, licences_file, source_catalogs_dir, source_licences_dir
 from .licenses import find_license_item, load_license_items, search_licenses
 from .models import ArchitectureRequest, QuoteRequest, QuoteResponse
 from .quote import calculate_quote
+from .sync import sync_catalog as run_sync_catalog
+from .sync import sync_summary
+from .sync import sync_status
 
 
 app = FastAPI(
@@ -34,13 +37,36 @@ app.add_middleware(
 def health() -> dict[str, Any]:
     catalog_count = len(load_catalog_items())
     license_count = len(load_license_items())
+    sync = sync_summary()
     return {
         "status": "ok",
         "catalog_items": catalog_count,
         "license_items": license_count,
         "catalogs_dir": str(catalogs_dir()),
         "licences_file": str(licences_file()),
+        "source_catalogs_dir": str(source_catalogs_dir()),
+        "source_licences_dir": str(source_licences_dir()),
+        "sync": {
+            "is_synchronized": sync.get("is_synchronized"),
+            "needs_sync": sync.get("needs_sync"),
+            "source_available": sync.get("source_available"),
+            "delta": sync.get("delta"),
+            "status_endpoint": sync.get("status_endpoint"),
+        },
     }
+
+
+@app.get("/api/sync/status")
+def get_sync_status() -> dict[str, Any]:
+    return sync_status()
+
+
+@app.post("/api/sync/catalog")
+def post_sync_catalog() -> dict[str, Any]:
+    try:
+        return run_sync_catalog()
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/api/catalog")
@@ -49,7 +75,7 @@ def list_catalog(
     category: Optional[str] = None,
     type: Optional[str] = None,
     sub_type: Optional[str] = None,
-    include_deprecated: bool = False,
+    include_deprecated: bool = True,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=1000),
 ) -> dict[str, Any]:

@@ -192,7 +192,7 @@ def search_catalog(
     category: Optional[str] = None,
     item_type: Optional[str] = None,
     sub_type: Optional[str] = None,
-    include_deprecated: bool = False,
+    include_deprecated: bool = True,
     skip: int = 0,
     limit: int = 100,
 ) -> Tuple[list[dict[str, Any]], int]:

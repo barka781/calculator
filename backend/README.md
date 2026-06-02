@@ -28,6 +28,22 @@ Ces données ont le même format que les sources QuoteFlow, mais le service
 reste autonome : pas de DB QuoteFlow, pas de Qdrant, pas d'auth QuoteFlow et
 pas de Gemini.
 
+## Synchronisation QuoteFlow
+
+Le calculateur peut synchroniser ses données locales depuis une copie QuoteFlow
+locale, sans base de données :
+
+- source par défaut : `../quoteflow/CATALOGS` et `../quoteflow/LICENCES`
+- cible : `backend/data/CATALOGS` et `backend/data/LICENCES`
+- variables possibles :
+  - `CALCULATOR_QUOTEFLOW_ROOT`
+  - `CALCULATOR_SOURCE_CATALOGS_DIR`
+  - `CALCULATOR_SOURCE_LICENCES_DIR`
+  - `CALCULATOR_DATA_DIR`
+
+Les dossiers licences `SOURCE/` et `TRAIN/` sont ignores : ils contiennent les
+sources brutes et supports de formation, pas les fichiers runtime de l'API.
+
 ## État de l'extraction
 
 Le périmètre fiable du MVP est le flux catalogue + licences + panier/devis.
@@ -42,6 +58,8 @@ réalignés avec la logique QuoteFlow avant une utilisation métier complète.
 - `GET /api/catalog/{sku}`
 - `GET /api/licenses`
 - `GET /api/licenses/{sku}`
+- `GET /api/sync/status`
+- `POST /api/sync/catalog`
 - `POST /api/quote`
 - `POST /api/architecture/calculate`
 - `POST /api/managed-services/calculate`
@@ -71,7 +89,7 @@ Paramètres :
 - `category` : filtre partiel sur la catégorie.
 - `type` : filtre partiel sur le type.
 - `sub_type` : filtre partiel sur le sous-type.
-- `include_deprecated` : inclure les items dépréciés ou retirés.
+- `include_deprecated` : inclure les items dépréciés ou retirés, actif par défaut pour rester aligné avec la liste plate QuoteFlow.
 - `skip` / `limit` : pagination.
 
 Exemple :
@@ -133,6 +151,18 @@ curl 'http://127.0.0.1:8001/api/licenses?q=windows&limit=5'
 ### `GET /api/licenses/{sku}`
 
 Retourne une licence par SKU exact. Répond `404` si le SKU est introuvable.
+
+### `GET /api/sync/status`
+
+Compare les fichiers runtime QuoteFlow source avec la copie locale du
+calculateur. Retourne les chemins source/cible, la validation YAML, les checksums
+et le delta (`new`, `modified`, `removed`).
+
+### `POST /api/sync/catalog`
+
+Valide les YAML source, copie les fichiers runtime vers `backend/data`, supprime
+les fichiers runtime locaux obsoletes, puis invalide les caches catalogue et
+licences. Retourne l'etat avant/apres synchronisation.
 
 ### `POST /api/quote`
 

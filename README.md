@@ -51,6 +51,8 @@ Endpoints principaux :
 - `GET /api/catalog/{sku}`
 - `GET /api/licenses`
 - `GET /api/licenses/{sku}`
+- `GET /api/sync/status`
+- `POST /api/sync/catalog`
 - `POST /api/quote`
 - `POST /api/architecture/calculate`
 - `POST /api/managed-services/calculate`

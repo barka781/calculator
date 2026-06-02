@@ -22,3 +22,25 @@ def catalogs_dir() -> Path:
 
 def licences_file() -> Path:
     return data_root() / "LICENCES" / "licences.yaml"
+
+
+@lru_cache(maxsize=1)
+def quoteflow_root() -> Path:
+    configured = os.getenv("CALCULATOR_QUOTEFLOW_ROOT")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return project_root().parents[1] / "quoteflow"
+
+
+def source_catalogs_dir() -> Path:
+    configured = os.getenv("CALCULATOR_SOURCE_CATALOGS_DIR")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return quoteflow_root() / "CATALOGS"
+
+
+def source_licences_dir() -> Path:
+    configured = os.getenv("CALCULATOR_SOURCE_LICENCES_DIR")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return quoteflow_root() / "LICENCES"
