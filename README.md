@@ -3,6 +3,13 @@
 Application autonome extraite de QuoteFlow pour calculer des paniers Cloud Temple
 depuis les catalogues et licences YAML.
 
+## Etat du périmètre
+
+Le périmètre stable couvre aujourd'hui le MVP catalogue + licences + panier/devis.
+Les calculateurs architecture, infogérance et appliances existent côté API, mais
+restent des versions simplifiées à revoir avant de les considérer comme une
+extraction complète de QuoteFlow.
+
 ## Structure
 
 ```text
@@ -46,6 +53,11 @@ Endpoints principaux :
 - `GET /api/licenses/{sku}`
 - `POST /api/quote`
 - `POST /api/architecture/calculate`
+- `POST /api/managed-services/calculate`
+- `POST /api/appliances/{appliance_type}/offer`
+
+Le schéma JSON détaillé des endpoints est documenté dans
+`backend/README.md`.
 
 ## Tests
 
