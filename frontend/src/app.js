@@ -10,7 +10,7 @@ const state = {
   apiOnline: false,
   cart: [],
   catalogTotal: 0,
-  discount: 25,
+  discount: 0,
   health: null,
   licenseTotal: 0,
   loading: true,
@@ -287,6 +287,7 @@ const getTotals = () => {
     publicMonthly,
     periodTotal: state.quote?.period_discounted_total ?? monthly * state.period,
     savings: state.quote?.savings_total ?? (publicMonthly - monthly) * state.period,
+    engagementTotal: state.quote?.total_on_engagement ?? null,
   };
 };
 
@@ -705,7 +706,7 @@ const render = () => {
               </select>
             </label>
             <label>
-              <span>Remise</span>
+              <span>Remise commerciale (en plus)</span>
               <input type="range" min="0" max="40" step="1" value="${state.discount}" data-discount />
               <strong>${state.discount}%</strong>
             </label>
@@ -728,6 +729,14 @@ const render = () => {
               <span>Projection ${state.period} mois</span>
               <strong>${formatMoney(totals.periodTotal)}</strong>
             </div>
+            ${
+              totals.engagementTotal != null
+                ? `<div>
+              <span>Total sur engagement</span>
+              <strong>${formatMoney(totals.engagementTotal)}</strong>
+            </div>`
+                : ""
+            }
             <div>
               <span>Économie estimée</span>
               <strong>${formatMoney(totals.savings)}</strong>

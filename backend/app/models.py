@@ -53,7 +53,10 @@ class QuoteLineResponse(BaseModel):
     quantity: float
     public_unit_price: float
     discounted_unit_price: float
+    standard_discount_percent: float = 0
     monthly_total: float
+    engagement_months: int = 1
+    engagement_total: float = 0
 
 
 class QuoteResponse(BaseModel):
@@ -67,6 +70,7 @@ class QuoteResponse(BaseModel):
     period_public_total: float
     period_discounted_total: float
     savings_total: float
+    total_on_engagement: float = 0
 
 
 class VmSpec(BaseModel):
