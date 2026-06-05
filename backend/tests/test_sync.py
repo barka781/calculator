@@ -1,4 +1,7 @@
+import os
 from pathlib import Path
+
+import pytest
 
 from app import config
 from app.catalog import load_catalog_items
@@ -17,6 +20,28 @@ def _reset_caches() -> None:
     config.quoteflow_root.cache_clear()
     load_catalog_items.cache_clear()
     load_license_items.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def reset_caches_around_test():
+    original_env = {
+        "CALCULATOR_DATA_DIR": os.environ.get("CALCULATOR_DATA_DIR"),
+        "CALCULATOR_QUOTEFLOW_ROOT": os.environ.get("CALCULATOR_QUOTEFLOW_ROOT"),
+        "CALCULATOR_SOURCE_CATALOGS_DIR": os.environ.get("CALCULATOR_SOURCE_CATALOGS_DIR"),
+        "CALCULATOR_SOURCE_LICENCES_DIR": os.environ.get("CALCULATOR_SOURCE_LICENCES_DIR"),
+        "CALCULATOR_SOURCE": os.environ.get("CALCULATOR_SOURCE"),
+    }
+    # La synchro porte sur les fichiers YAML : on épingle la source en lecture
+    # sur YAML pour que les comptages reflètent le répertoire de données synchronisé.
+    os.environ["CALCULATOR_SOURCE"] = "yaml"
+    _reset_caches()
+    yield
+    for key, value in original_env.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+    _reset_caches()
 
 
 def test_sync_catalog_from_local_quoteflow_source(tmp_path, monkeypatch):
@@ -62,14 +87,41 @@ items:
     assert result["status"] == "success"
     assert result["catalog_items"] == 1
     assert result["license_items"] == 1
+    assert result["last_sync"]["kind"] == "local_quoteflow"
+    assert result["last_sync"]["source"]["git"]["available"] is False
 
     assert (target / "CATALOGS/cloud/compute.yaml").exists()
     assert (target / "LICENCES/licences.yaml").exists()
     assert not (target / "LICENCES/SOURCE/raw.csv").exists()
+    assert (target / "_sync_manifest.json").exists()
 
     after = sync_status()
     assert after["is_synchronized"] is True
+    assert after["source"]["kind"] == "local_quoteflow"
+    assert after["source"]["git"]["available"] is False
+    assert after["last_sync"]["synced_at"] == result["last_sync"]["synced_at"]
     assert after["delta"]["new_count"] == 0
     assert after["delta"]["modified_count"] == 0
+    assert after["delta"]["removed_count"] == 0
 
     assert get_sync_status()["is_synchronized"] is True
+
+    _write(
+        source / "CATALOGS/cloud/compute.yaml",
+        """
+metadata:
+  category: cloud
+items:
+  - sku: csp:test:compute:v1
+    name: Test Compute
+    unit: Lame
+    pricing:
+      public_price: 43
+""",
+    )
+    _write(target / "LICENCES/obsolete.md", "obsolete")
+
+    changed = sync_status()
+    assert changed["needs_sync"] is True
+    assert changed["delta"]["modified"] == ["CATALOGS/cloud/compute.yaml"]
+    assert changed["delta"]["removed"] == ["LICENCES/obsolete.md"]

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import subprocess
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 from shutil import copy2
@@ -9,12 +12,20 @@ from typing import Any
 import yaml
 
 from .catalog import load_catalog_items
-from .config import catalogs_dir, licences_file, source_catalogs_dir, source_licences_dir
+from .config import (
+    catalogs_dir,
+    data_root,
+    licences_file,
+    quoteflow_root,
+    source_catalogs_dir,
+    source_licences_dir,
+)
 from .licenses import load_license_items
 
 
 RUNTIME_EXTENSIONS = {".json", ".md", ".yaml", ".yml"}
 IGNORED_DIRS = {"SOURCE", "TRAIN", "__pycache__"}
+SYNC_MANIFEST_NAME = "_sync_manifest.json"
 
 
 @dataclass(frozen=True)
@@ -40,6 +51,82 @@ def _sha256(path: Path) -> str:
 def _load_yaml(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as handle:
         return yaml.safe_load(handle)
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _sync_manifest_path() -> Path:
+    return data_root() / SYNC_MANIFEST_NAME
+
+
+def _run_git(root: Path, args: list[str]) -> tuple[str | None, str | None]:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, str(exc)
+
+    stdout = result.stdout.strip()
+    stderr = result.stderr.strip()
+    if result.returncode != 0:
+        return None, stderr or stdout or f"git exited with {result.returncode}"
+    return stdout, None
+
+
+def _source_git_metadata() -> dict[str, Any]:
+    root = quoteflow_root()
+    metadata: dict[str, Any] = {
+        "available": False,
+        "root": str(root),
+    }
+
+    inside_worktree, error = _run_git(root, ["rev-parse", "--is-inside-work-tree"])
+    if inside_worktree != "true":
+        metadata["error"] = error or "not a git worktree"
+        return metadata
+
+    branch, _ = _run_git(root, ["rev-parse", "--abbrev-ref", "HEAD"])
+    commit, commit_error = _run_git(root, ["rev-parse", "--short", "HEAD"])
+    commit_full, _ = _run_git(root, ["rev-parse", "HEAD"])
+    commit_date, _ = _run_git(root, ["show", "-s", "--format=%cI", "HEAD"])
+    remote, _ = _run_git(root, ["config", "--get", "remote.origin.url"])
+    status, _ = _run_git(
+        root,
+        ["status", "--porcelain", "--untracked-files=normal", "--", "CATALOGS", "LICENCES"],
+    )
+
+    metadata.update(
+        {
+            "available": commit is not None,
+            "branch": branch,
+            "commit": commit,
+            "commit_full": commit_full,
+            "commit_date": commit_date,
+            "remote": remote,
+            "dirty": bool(status),
+            "dirty_count": len(status.splitlines()) if status else 0,
+        }
+    )
+    if commit_error:
+        metadata["error"] = commit_error
+    return metadata
+
+
+def _source_metadata() -> dict[str, Any]:
+    return {
+        "kind": "local_quoteflow",
+        "quoteflow_root": str(quoteflow_root()),
+        "catalogs_dir": str(source_catalogs_dir()),
+        "licences_dir": str(source_licences_dir()),
+        "git": _source_git_metadata(),
+    }
 
 
 def _iter_runtime_files(source_root: Path, target_root: Path, group: str) -> list[RuntimeFile]:
@@ -179,6 +266,56 @@ def _manifest(source_files: list[RuntimeFile]) -> dict[str, dict[str, Any]]:
     return manifest
 
 
+def _aggregate_checksum(manifest: dict[str, dict[str, Any]], checksum_key: str) -> str:
+    digest = sha256()
+    for key in sorted(manifest):
+        checksum = manifest[key].get(checksum_key)
+        if checksum is None:
+            continue
+        digest.update(key.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(str(checksum).encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def _read_last_sync_manifest() -> dict[str, Any] | None:
+    path = _sync_manifest_path()
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except Exception as exc:
+        return {"status": "error", "path": str(path), "error": str(exc)}
+    if isinstance(data, dict):
+        return data
+    return {"status": "error", "path": str(path), "error": "manifest root is not an object"}
+
+
+def _write_last_sync_manifest(
+    source_files: list[RuntimeFile],
+    validation: dict[str, Any],
+    source: dict[str, Any],
+) -> dict[str, Any]:
+    manifest = _manifest(source_files)
+    payload = {
+        "status": "success",
+        "kind": "local_quoteflow",
+        "synced_at": _utc_now(),
+        "file_count": len(source_files),
+        "source_checksum": _aggregate_checksum(manifest, "source_checksum"),
+        "validation": validation,
+        "source": source,
+    }
+    path = _sync_manifest_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+    return payload
+
+
 def sync_status() -> dict[str, Any]:
     source_files = _runtime_files()
     manifest = _manifest(source_files)
@@ -208,13 +345,11 @@ def sync_status() -> dict[str, Any]:
 
     return {
         "status": "success",
-        "source": {
-            "catalogs_dir": str(source_catalogs_dir()),
-            "licences_dir": str(source_licences_dir()),
-        },
+        "source": _source_metadata(),
         "target": {
             "catalogs_dir": str(catalogs_dir()),
             "licences_file": str(licences_file()),
+            "manifest_file": str(_sync_manifest_path()),
         },
         "is_synchronized": not needs_sync and validation_status == "success",
         "needs_sync": needs_sync,
@@ -222,6 +357,9 @@ def sync_status() -> dict[str, Any]:
         "validation_status": validation_status,
         "validation_error": validation_error,
         "file_count": len(manifest),
+        "source_checksum": _aggregate_checksum(manifest, "source_checksum"),
+        "target_checksum": _aggregate_checksum(manifest, "target_checksum"),
+        "last_sync": _read_last_sync_manifest(),
         "delta": {
             "new": sorted(new_files),
             "modified": sorted(modified_files),
@@ -251,6 +389,8 @@ def sync_summary() -> dict[str, Any]:
         "is_synchronized": not needs_sync,
         "needs_sync": needs_sync,
         "source_available": source_catalogs_dir().exists() and (source_licences_dir() / "licences.yaml").exists(),
+        "source": _source_metadata(),
+        "last_sync": _read_last_sync_manifest(),
         "file_count": len(source_files),
         "delta": {
             "new_count": len(missing_targets),
@@ -265,6 +405,7 @@ def sync_catalog() -> dict[str, Any]:
     validation = {"catalogs": _validate_catalogs(), "licences": _validate_licences()}
     before = sync_status()
     source_files = _runtime_files()
+    source = _source_metadata()
     target_extra = {
         **_target_files_for_group(source_files, catalogs_dir(), "CATALOGS"),
         **_target_files_for_group(source_files, licences_file().parent, "LICENCES"),
@@ -279,6 +420,7 @@ def sync_catalog() -> dict[str, Any]:
 
     load_catalog_items.cache_clear()
     load_license_items.cache_clear()
+    last_sync = _write_last_sync_manifest(source_files, validation, source)
     after = sync_status()
 
     return {
@@ -287,6 +429,7 @@ def sync_catalog() -> dict[str, Any]:
         "validation": validation,
         "before": before,
         "after": after,
+        "last_sync": last_sync,
         "catalog_items": len(load_catalog_items()),
         "license_items": len(load_license_items()),
     }

@@ -1,804 +1,1489 @@
+/* Cloud Temple Calculator — calculette à plat.
+   Familles dépliables, panier + résumé financier temps réel via /api/quote.
+   Le backend applique : prix_remisé = public × (1 − standard%) × (1 − commerciale%). */
+
 const API_BASE =
   window.CALCULATOR_API_BASE ||
   localStorage.getItem("calculatorApiBase") ||
   "http://127.0.0.1:8001";
 
+const PAGE_SIZE = 50;
+const PERIODS = [1, 12, 24, 36, 48, 60];
+
+/* ---------- Familles & groupes (mappés sur le champ `category` du backend) ---------- */
+const GROUPS = [
+  { id: "infra", label: "Infrastructure — IaaS" },
+  { id: "platform", label: "Plateforme — PaaS & IA" },
+  { id: "data", label: "Données & continuité" },
+  { id: "security", label: "Sécurité" },
+  { id: "services", label: "Services & infogérance" },
+  { id: "licenses", label: "Licences éditeurs" },
+];
+
+const FAMILIES = [
+  { id: "compute", label: "Compute", group: "infra", icon: "compute", categories: ["Compute"], tag: "VMware, OpenIaaS, bare metal" },
+  { id: "storage", label: "Stockage", group: "infra", icon: "storage", categories: ["Storage"], tag: "Bloc, fichier et objet S3" },
+  { id: "network", label: "Réseau", group: "infra", icon: "network", categories: ["Network"], tag: "VPC, load balancer, connectivité" },
+  { id: "housing", label: "Hébergement", group: "infra", icon: "housing", categories: ["Housing"], tag: "Housing et hébergement physique" },
+  { id: "socle", label: "Socle", group: "infra", icon: "socle", categories: ["Socle"], tag: "Socle d'infrastructure managé" },
+  { id: "paas", label: "PaaS", group: "platform", icon: "paas", categories: ["Paas"], tag: "Kubernetes, OpenShift, managé" },
+  { id: "ia", label: "IA / LLMaaS", group: "platform", icon: "ia", categories: ["Llmaas"], tag: "LLM as a Service, inférence IA" },
+  { id: "backup", label: "Sauvegarde", group: "data", icon: "backup", categories: ["Backup"], tag: "Backup et rétention" },
+  { id: "pra", label: "PRA", group: "data", icon: "pra", categories: ["Pra"], tag: "Plan de reprise d'activité" },
+  { id: "securityfam", label: "Sécurité", group: "security", icon: "security", categories: ["Security"], tag: "Firewall, bastion, sécurité réseau" },
+  { id: "servicesfam", label: "Services & infogérance", group: "services", icon: "services", categories: ["Services"], tag: "Infogérance, support, prestations" },
+  { id: "licenses", label: "Licences", group: "licenses", icon: "licenses", kind: "licenses", tag: "Microsoft, VMware et autres éditeurs" },
+];
+
+const categoryToFamily = (() => {
+  const map = new Map();
+  FAMILIES.forEach((f) => (f.categories || []).forEach((c) => map.set(c.toLowerCase(), f.id)));
+  return map;
+})();
+
+/* ---------- Icônes ---------- */
+const I = {
+  brand:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .9-8.9 6 6 0 0 0-11.6-1.2A4 4 0 0 0 6 19z"/></svg>',
+  search:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>',
+  chevron:
+    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>',
+  cart:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2 3h2l2.6 13.4a1 1 0 0 0 1 .8h9.7a1 1 0 0 0 1-.8L23 7H6"/></svg>',
+  trash:
+    '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V6"/></svg>',
+  download:
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>',
+  plus:
+    '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
+  copy:
+    '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  close:
+    '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  warn:
+    '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>',
+  gear:
+    '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 2.6 15a1.6 1.6 0 0 0-1.1-1.5H1.4a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 3 8.6a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 8 4.4h.1A1.6 1.6 0 0 0 9.6 3V2.4a2 2 0 1 1 4 0v.1A1.6 1.6 0 0 0 15 4.4a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1.1h.2a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>',
+  compute:
+    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>',
+  storage:
+    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>',
+  network:
+    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="16" y="16" width="6" height="6" rx="1"/><path d="M12 8v4M12 12H5v4M12 12h7v4"/></svg>',
+  housing:
+    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h8M8 14h8M10 18h4"/></svg>',
+  socle:
+    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5z"/><path d="m2 12 10 5 10-5M2 17l10 5 10-5"/></svg>',
+  paas:
+    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="M12 7v10M7.5 9.5l9 5M16.5 9.5l-9 5"/></svg>',
+  ia:
+    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3.2"/></svg>',
+  backup:
+    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.6-6.4M3 4v4h4"/></svg>',
+  pra:
+    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/><path d="m9 12 2 2 4-4"/></svg>',
+  security:
+    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/><rect x="9" y="11" width="6" height="5" rx="1"/><path d="M10 11V9a2 2 0 0 1 4 0v2"/></svg>',
+  services:
+    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+  licenses:
+    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H4z"/><path d="M4 20h16M9 16v4M15 16v4"/></svg>',
+};
+const familyIcon = (f) => I[f.icon] || I.services;
+
+/* ---------- État ---------- */
+const quoteBoot = loadQuoteState();
 const state = {
-  activeFamily: "Tous",
-  activeType: "Tous",
-  apiError: "",
-  apiOnline: false,
-  cart: [],
-  catalogTotal: 0,
-  discount: 0,
   health: null,
-  licenseTotal: 0,
+  online: false,
+  apiError: "",
   loading: true,
-  period: 12,
-  products: [],
-  query: "",
-  quote: null,
-  quoteError: "",
-  quoteLoading: false,
-  syncError: "",
-  syncing: false,
-  syncStatus: null,
+  catalog: [],
+  catalogByFamily: new Map(),
+  search: "",
+  expanded: new Set(),
+  lic: { all: [], loaded: false, loading: false, error: "", query: "", vendor: "", term: "", page: 1 },
+  quotes: quoteBoot.quotes,
+  activeQuoteId: quoteBoot.activeQuoteId,
 };
 
 const app = document.querySelector("#app");
 let quoteTimer = null;
+let quoteReq = 0;
 let searchTimer = null;
-let licenseSearchRequestId = 0;
-let quoteRequestId = 0;
+let licTimer = null;
 
-const familyOrder = [
-  "Tous",
-  "Compute",
-  "Stockage",
-  "Sauvegarde",
-  "Réseau",
-  "PaaS",
-  "Services",
-  "Licences",
-];
+Object.defineProperties(state, {
+  cart: {
+    get: () => activeQuote().cart,
+    set: (v) => {
+      activeQuote().cart = sanitizeCart(v);
+    },
+  },
+  period: {
+    get: () => activeQuote().period,
+    set: (v) => {
+      activeQuote().period = PERIODS.includes(Number(v)) ? Number(v) : 12;
+    },
+  },
+  discount: {
+    get: () => activeQuote().discount,
+    set: (v) => {
+      activeQuote().discount = clamp(Number(v), 0, 100);
+    },
+  },
+  projectName: {
+    get: () => activeQuote().projectName,
+    set: (v) => {
+      activeQuote().projectName = String(v || "");
+    },
+  },
+  quote: {
+    get: () => activeQuote().quote,
+    set: (v) => {
+      activeQuote().quote = v;
+    },
+  },
+  quoteLoading: {
+    get: () => activeQuote().quoteLoading,
+    set: (v) => {
+      activeQuote().quoteLoading = !!v;
+    },
+  },
+  quoteError: {
+    get: () => activeQuote().quoteError,
+    set: (v) => {
+      activeQuote().quoteError = String(v || "");
+    },
+  },
+});
+persistQuotes();
 
-const escapeHtml = (value) =>
-  String(value ?? "")
+/* ---------- Helpers ---------- */
+function clamp(n, lo, hi) {
+  return Math.min(hi, Math.max(lo, Number.isFinite(n) ? n : lo));
+}
+
+const esc = (v) =>
+  String(v ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 
-const formatMoney = (value, compact = false) =>
+// Échappe le texte puis entoure les termes recherchés de <mark> pour les surligner.
+function highlight(text, q) {
+  const safe = esc(text);
+  const tokens = [...new Set(String(q || "").trim().toLowerCase().split(/\s+/).filter(Boolean))].map((t) =>
+    t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  );
+  if (!tokens.length) return safe;
+  try {
+    return safe.replace(new RegExp(`(${tokens.join("|")})`, "gi"), "<mark>$1</mark>");
+  } catch {
+    return safe;
+  }
+}
+
+const money = (v, compact = false) =>
   new Intl.NumberFormat("fr-FR", {
     style: "currency",
     currency: "EUR",
     maximumFractionDigits: compact ? 0 : 2,
-  }).format(Number(value) || 0);
+  }).format(Number(v) || 0);
 
-const formatNumber = (value) =>
-  new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(
-    Number(value) || 0,
-  );
+const num = (v) => new Intl.NumberFormat("fr-FR").format(Number(v) || 0);
 
-const buildUrl = (path, params = {}) => {
+const clone = (v) => JSON.parse(JSON.stringify(v));
+
+function buildUrl(path, params = {}) {
   const base = API_BASE.endsWith("/") ? API_BASE : `${API_BASE}/`;
   const url = new URL(path, base);
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== "") {
-      url.searchParams.set(key, value);
-    }
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
   });
   return url.toString();
-};
+}
 
-const fetchJson = async (path, options = {}) => {
+async function fetchJson(path, options = {}) {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 8000);
+  const timeout = window.setTimeout(() => controller.abort(), options.timeout || 12000);
   try {
-    const response = await fetch(buildUrl(path, options.params), {
+    const res = await fetch(buildUrl(path, options.params), {
       ...options,
-      headers: {
-        "content-type": "application/json",
-        ...(options.headers || {}),
-      },
+      headers: { "content-type": "application/json", ...(options.headers || {}) },
       signal: controller.signal,
     });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    return response.json();
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
   } finally {
     window.clearTimeout(timeout);
   }
-};
+}
 
-const getFamily = (item) => {
-  const text = `${item.category || ""} ${item.type || ""} ${item.sub_type || ""}`.toLowerCase();
-  if (text.includes("licence") || text.includes("license")) return "Licences";
-  if (
-    text.includes("compute") ||
-    text.includes("vmware") ||
-    text.includes("openiaas") ||
-    text.includes("bare")
-  ) {
-    return "Compute";
-  }
-  if (text.includes("storage") || text.includes("stockage")) return "Stockage";
-  if (text.includes("backup") || text.includes("sauvegarde")) return "Sauvegarde";
-  if (
-    text.includes("network") ||
-    text.includes("firewall") ||
-    text.includes("loadbalancer") ||
-    text.includes("bastion") ||
-    text.includes("vpc")
-  ) {
-    return "Réseau";
-  }
-  if (text.includes("paas") || text.includes("kubernetes") || text.includes("openshift")) {
-    return "PaaS";
-  }
-  if (text.includes("service")) return "Services";
-  return item.category || "Services";
-};
+function quoteId() {
+  return window.crypto?.randomUUID?.() || `quote-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
-const getDefaultQuantity = (unit, family) => {
-  const normalized = String(unit || "").toLowerCase();
-  if (normalized.includes("gio") || normalized.includes("go")) return 1024;
-  if (normalized.includes("utilisateur")) return 10;
-  if (normalized.includes("core")) return 8;
-  if (family === "Sauvegarde") return 10;
-  return 1;
-};
+function sanitizeCart(lines) {
+  return Array.isArray(lines)
+    ? lines
+        .filter((l) => l && l.sku)
+        .map((l) => ({
+          sku: String(l.sku),
+          source: l.source === "license" ? "license" : "catalog",
+          name: String(l.name || l.sku),
+          unit: String(l.unit || "unité"),
+          minQty: Math.max(1, Math.round(Number(l.minQty) || 1)),
+          quantity: Math.max(1, Math.round(Number(l.quantity) || 1)),
+        }))
+    : [];
+}
 
-const compactTags = (values) =>
-  values
-    .filter(Boolean)
-    .map((value) => String(value))
-    .filter((value, index, list) => list.indexOf(value) === index)
-    .slice(0, 4);
-
-const normalizeCatalogItem = (item) => {
-  const family = getFamily(item);
-  const summary = item.pricing_summary || {};
-  const specs = item.specs || {};
-  const metadata = item.metadata || {};
-  const unit = summary.unit || item.unit || "unite";
-  const price = Number(summary.public_price || item.pricing?.public_price || 0);
-
+function createQuote(data = {}, index = 0) {
   return {
-    sku: item.sku,
-    name: item.name || item.title || item.sku,
-    category: item.category || "Catalogue",
-    family,
-    type: item.type || family,
-    subType: item.sub_type || "",
-    unit,
-    price,
-    defaultQuantity: getDefaultQuantity(unit, family),
-    minQuantity: Number(summary.min_quantity || 1),
-    description: item.description || item.source_file || "",
-    tags: compactTags([
-      item.type,
-      item.sub_type,
-      metadata.snc ? "SNC" : "",
-      specs.ram ? `${specs.ram} Go RAM` : "",
-      specs.cores ? `${specs.cores} cores` : "",
-      specs.iops_per_tb ? `${specs.iops_per_tb} IOPS/To` : "",
-    ]),
-    source: "catalog",
+    id: data.id || quoteId(),
+    name: String(data.name || `Cotation ${index + 1}`),
+    projectName: String(data.projectName || ""),
+    cart: sanitizeCart(data.cart),
+    period: PERIODS.includes(Number(data.period)) ? Number(data.period) : 12,
+    discount: clamp(Number(data.discount) || 0, 0, 100),
+    quote: data.quote || null,
+    quoteLoading: false,
+    quoteError: "",
   };
-};
+}
 
-const normalizeLicenseItem = (item) => ({
-  sku: item.sku,
-  name: item.name || item.sku,
-  category: item.category || "Licence",
-  family: "Licences",
-  type: item.vendor || "Licence",
-  subType: item.edition || "",
-  unit: item.unit || "unite",
-  price: Number(item.price || item.pricing?.public_price || 0),
-  defaultQuantity: getDefaultQuantity(item.unit, "Licences"),
-  minQuantity: 1,
-  description: item.description || [item.vendor, item.edition].filter(Boolean).join(" · "),
-  tags: compactTags([item.vendor, item.edition, item.pricing?.term]),
-  source: "license",
-});
+function loadCart() {
+  try {
+    const raw = JSON.parse(localStorage.getItem("calc.cart") || "[]");
+    return sanitizeCart(raw);
+  } catch {
+    return [];
+  }
+}
 
-const productKey = (item) => `${item.source || "auto"}:${item.sku}`;
+function loadQuoteState() {
+  try {
+    const stored = JSON.parse(localStorage.getItem("calc.quotes") || "null");
+    const source = Array.isArray(stored) ? { quotes: stored, activeQuoteId: stored[0]?.id } : stored;
+    if (source && Array.isArray(source.quotes) && source.quotes.length) {
+      const quotes = source.quotes.map((q, i) => createQuote(q, i));
+      const activeQuoteId = quotes.some((q) => q.id === source.activeQuoteId) ? source.activeQuoteId : quotes[0].id;
+      return { quotes, activeQuoteId };
+    }
+  } catch {
+    // Migration douce : si le nouveau format est illisible, on retombe sur les anciennes clés.
+  }
 
-const mergeProducts = (...groups) => {
-  const byKey = new Map();
-  groups.flat().forEach((item) => {
-    if (item?.sku) byKey.set(productKey(item), item);
-  });
-  return Array.from(byKey.values()).sort((a, b) =>
-    `${a.family}${a.type}${a.name}`.localeCompare(`${b.family}${b.type}${b.name}`, "fr"),
+  const migrated = createQuote(
+    {
+      name: "Cotation 1",
+      projectName: localStorage.getItem("calc.project") || "",
+      cart: loadCart(),
+      period: Number(localStorage.getItem("calc.period")) || 12,
+      discount: Number(localStorage.getItem("calc.discount")) || 0,
+    },
+    0
   );
-};
+  return { quotes: [migrated], activeQuoteId: migrated.id };
+}
 
-const countBy = (items, getter) =>
-  items.reduce((acc, item) => {
-    const key = getter(item) || "Autres";
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
-
-const getFamilies = () => {
-  const counts = countBy(state.products, (item) => item.family);
-  return familyOrder
-    .filter((family) => family === "Tous" || counts[family])
-    .map((family) => ({
-      label: family,
-      count: family === "Tous" ? state.products.length : counts[family],
-    }));
-};
-
-const getTypes = () => {
-  const scoped =
-    state.activeFamily === "Tous"
-      ? state.products
-      : state.products.filter((item) => item.family === state.activeFamily);
-  const counts = countBy(scoped, (item) => item.type);
-  return [
-    { label: "Tous", count: scoped.length },
-    ...Object.entries(counts)
-      .sort(([a], [b]) => a.localeCompare(b, "fr"))
-      .map(([label, count]) => ({ label, count })),
-  ];
-};
-
-const matchesSearch = (item) => {
-  const query = state.query.trim().toLowerCase();
-  if (!query) return true;
-  return [item.name, item.sku, item.family, item.type, item.subType, item.description, ...item.tags]
-    .join(" ")
-    .toLowerCase()
-    .includes(query);
-};
-
-const getVisibleProducts = () =>
-  state.products.filter((item) => {
-    const familyMatch =
-      state.activeFamily === "Tous" || item.family === state.activeFamily;
-    const typeMatch = state.activeType === "Tous" || item.type === state.activeType;
-    return familyMatch && typeMatch && matchesSearch(item);
-  });
-
-const findProduct = (sku, preferredSource = "auto") => {
-  if (preferredSource !== "auto") {
-    const exact = state.products.find(
-      (item) => item.sku === sku && item.source === preferredSource,
-    );
-    if (exact) return exact;
-  }
-  return state.products.find((item) => item.sku === sku);
-};
-
-const isInCart = (sku) => state.cart.some((line) => line.sku === sku);
-
-const getCartRows = () =>
-  state.cart
-    .map((line) => {
-      const product = findProduct(line.sku, line.source);
-      const apiLine = state.quote?.lines?.find((item) => item.sku === line.sku);
-      return product ? { ...product, ...line, apiLine } : null;
+function persistQuotes() {
+  localStorage.setItem(
+    "calc.quotes",
+    JSON.stringify({
+      activeQuoteId: state.activeQuoteId,
+      quotes: state.quotes.map((q) => ({
+        id: q.id,
+        name: q.name,
+        projectName: q.projectName,
+        cart: q.cart,
+        period: q.period,
+        discount: q.discount,
+      })),
     })
-    .filter(Boolean);
+  );
+}
 
-const getLineTotal = (line) =>
-  line.apiLine?.monthly_total ??
-  line.price * line.quantity * (1 - state.discount / 100);
+function persistCart() {
+  persistQuotes();
+}
 
-const getTotals = () => {
-  const rows = getCartRows();
-  const monthly =
-    state.quote?.monthly_discounted_total ??
-    rows.reduce((sum, line) => sum + getLineTotal(line), 0);
-  const publicMonthly =
-    state.quote?.monthly_public_total ??
-    rows.reduce((sum, line) => sum + line.price * line.quantity, 0);
+function activeQuote() {
+  const found = state.quotes.find((q) => q.id === state.activeQuoteId);
+  if (found) return found;
+  state.activeQuoteId = state.quotes[0]?.id || "";
+  return state.quotes[0] || createQuote({}, 0);
+}
 
-  return {
-    rows,
-    monthly,
-    publicMonthly,
-    periodTotal: state.quote?.period_discounted_total ?? monthly * state.period,
-    savings: state.quote?.savings_total ?? (publicMonthly - monthly) * state.period,
-    engagementTotal: state.quote?.total_on_engagement ?? null,
-  };
-};
+function quoteLabel(q, index = 0) {
+  return q.projectName.trim() || q.name || `Cotation ${index + 1}`;
+}
 
-const scheduleQuote = () => {
+function setActiveQuote(id) {
+  if (!state.quotes.some((q) => q.id === id)) return;
+  state.activeQuoteId = id;
+  quoteReq += 1;
   window.clearTimeout(quoteTimer);
-  quoteTimer = window.setTimeout(calculateRemoteQuote, 220);
-};
-
-const scheduleLicenseSearch = () => {
-  window.clearTimeout(searchTimer);
-  searchTimer = window.setTimeout(loadRemoteLicensesForSearch, 260);
-};
-
-const setFamily = (family) => {
-  state.activeFamily = family;
-  state.activeType = "Tous";
+  persistQuotes();
   render();
-  if (family === "Licences") scheduleLicenseSearch();
-};
+  if (state.cart.length && !state.quote) scheduleQuote();
+}
 
-const setType = (type) => {
-  state.activeType = type;
-  render();
-};
+function addQuote() {
+  const q = createQuote({ name: `Cotation ${state.quotes.length + 1}` }, state.quotes.length);
+  state.quotes.push(q);
+  setActiveQuote(q.id);
+}
 
-const setQuery = (query) => {
-  state.query = query;
-  render();
-  scheduleLicenseSearch();
-};
+function duplicateQuote() {
+  const source = activeQuote();
+  const sourceIndex = state.quotes.findIndex((q) => q.id === source.id);
+  const label = quoteLabel(source, sourceIndex);
+  const q = createQuote(
+    {
+      name: `${label} copie`,
+      projectName: `${label} copie`,
+      cart: clone(source.cart),
+      period: source.period,
+      discount: source.discount,
+    },
+    state.quotes.length
+  );
+  state.quotes.push(q);
+  setActiveQuote(q.id);
+}
 
-const setPeriod = (period) => {
-  state.period = Number(period);
-  state.quote = null;
-  render();
-  scheduleQuote();
-};
-
-const setDiscount = (discount) => {
-  state.discount = Number(discount);
-  state.quote = null;
-  render();
-  scheduleQuote();
-};
-
-const addToCart = (sku, source = "auto") => {
-  const item = findProduct(sku, source);
-  if (!item) return;
-  const line = state.cart.find((cartLine) => cartLine.sku === sku);
-  if (line) {
-    line.quantity += item.defaultQuantity;
-    if (line.source === "auto") line.source = source;
-  } else {
-    state.cart.push({ sku, quantity: item.defaultQuantity, source });
+function closeQuote(id) {
+  if (state.quotes.length <= 1) return;
+  const idx = state.quotes.findIndex((q) => q.id === id);
+  if (idx < 0) return;
+  state.quotes.splice(idx, 1);
+  if (state.activeQuoteId === id) {
+    const next = state.quotes[Math.min(idx, state.quotes.length - 1)];
+    state.activeQuoteId = next.id;
+    quoteReq += 1;
   }
-  state.quote = null;
+  persistQuotes();
   render();
-  scheduleQuote();
+  if (state.cart.length && !state.quote) scheduleQuote();
+}
+
+const engagementMonths = (str) => {
+  const m = /(\d+)\s*mois/i.exec(String(str || ""));
+  return m ? Number(m[1]) : 1;
 };
 
-const removeFromCart = (sku) => {
-  state.cart = state.cart.filter((line) => line.sku !== sku);
-  state.quote = null;
-  render();
-  scheduleQuote();
+const termLabel = (t) => {
+  const map = { monthly: "Mensuel", yearly: "Annuel", annual: "Annuel", one_shot: "Ponctuel", oneshot: "Ponctuel" };
+  return map[String(t || "").toLowerCase()] || (t ? String(t) : "");
 };
 
-const updateQuantity = (sku, quantity) => {
-  const line = state.cart.find((cartLine) => cartLine.sku === sku);
-  const product = findProduct(sku, line?.source || "auto");
-  if (!line || !product) return;
-  line.quantity = Math.max(product.minQuantity, Number(quantity) || product.minQuantity);
-  state.quote = null;
-  render();
-  scheduleQuote();
-};
-
-const loadInitialData = async () => {
+/* ---------- Données ---------- */
+async function loadAll() {
   state.loading = true;
   state.apiError = "";
-  render();
-
+  renderStatus();
   try {
-    const [health, catalog] = await Promise.all([
-      fetchJson("health"),
-      fetchJson("api/catalog", { params: { limit: 1000 } }),
-    ]);
-
-    state.health = health;
-    state.catalogTotal = catalog.total || catalog.items?.length || 0;
-    state.licenseTotal = health.license_items || 0;
-    state.apiOnline = true;
-    state.syncStatus = health.sync || null;
-    state.products = mergeProducts((catalog.items || []).map(normalizeCatalogItem));
-  } catch (error) {
-    state.apiOnline = false;
-    state.apiError = `API indisponible sur ${API_BASE}`;
-    state.products = [];
-    state.catalogTotal = 0;
-    state.licenseTotal = 0;
-    state.quote = null;
-  } finally {
-    state.loading = false;
-    render();
-  }
-
-  if (state.apiOnline) {
-    loadSyncStatus();
-  }
-};
-
-const loadSyncStatus = async () => {
-  if (!state.apiOnline) return;
-  try {
-    state.syncError = "";
-    state.syncStatus = await fetchJson("api/sync/status");
-    render();
+    state.health = await fetchJson("health", { timeout: 6000 });
+    state.online = state.health?.status === "ok";
   } catch {
-    state.syncError = "Statut de synchronisation indisponible";
-    render();
+    state.online = false;
+    state.apiError = "API injoignable";
   }
-};
 
-const runCatalogSync = async () => {
-  if (!state.apiOnline || state.syncing) return;
-  state.syncing = true;
-  state.syncError = "";
+  if (state.online) {
+    try {
+      const data = await fetchJson("api/catalog", { params: { limit: 1000, include_deprecated: false } });
+      state.catalog = (data.items || []).map(normalizeCatalog);
+      groupCatalog();
+    } catch {
+      state.apiError = "Catalogue indisponible";
+    }
+  }
+
+  state.loading = false;
   render();
+  if (state.cart.length) scheduleQuote();
+}
 
+function normalizeCatalog(item) {
+  const ps = item.pricing_summary || {};
+  const specs = item.specs || {};
+  const meta = item.metadata || {};
+  const familyId = categoryToFamily.get(String(item.category || "").toLowerCase()) || "servicesfam";
+  const publicPrice = Number(ps.public_price ?? item.pricing?.public_price ?? 0);
+  const pct = Number(ps.discount_percent ?? 0);
+  return {
+    sku: item.sku,
+    source: "catalog",
+    name: item.name || item.title || item.sku,
+    description: item.description || "",
+    category: item.category || "",
+    type: item.type || "",
+    subType: item.sub_type || "",
+    familyId,
+    unit: ps.unit || item.unit || "unité",
+    publicPrice,
+    discountPct: pct,
+    discountedPrice: Number(ps.discounted_price ?? publicPrice),
+    engagement: ps.engagement || item.pricing?.engagement || "",
+    baseQty: Number(ps.base_quantity || item.base_quantity || 1) || 1,
+    minQty: Number(ps.min_quantity || 1) || 1,
+    snc: !!meta.snc,
+    tags: tagsFor(item, specs),
+  };
+}
+
+function tagsFor(item, specs) {
+  const out = [];
+  // Type : rendu visible pour expliquer un match (ex. « baremetal » est dans le type, pas le nom).
+  const typeLabel = prettify(item.type);
+  if (typeLabel && typeLabel.toLowerCase() !== String(item.category || "").toLowerCase()) out.push(typeLabel);
+  if (item.sub_type && item.sub_type !== item.type) out.push(prettify(item.sub_type));
+  if (specs.cores) out.push(`${specs.cores} cores`);
+  if (specs.ram) out.push(`${specs.ram} Go RAM`);
+  if (specs.vcpu) out.push(`${specs.vcpu} vCPU`);
+  if (specs.iops_per_tb) out.push(`${specs.iops_per_tb} IOPS/To`);
+  return out.slice(0, 4);
+}
+const prettify = (s) => String(s || "").replaceAll("_", " ");
+
+function groupCatalog() {
+  const map = new Map();
+  FAMILIES.forEach((f) => map.set(f.id, []));
+  state.catalog.forEach((p) => {
+    if (!map.has(p.familyId)) map.set(p.familyId, []);
+    map.get(p.familyId).push(p);
+  });
+  map.forEach((list) => list.sort((a, b) => a.name.localeCompare(b.name, "fr")));
+  state.catalogByFamily = map;
+}
+
+async function loadLicenses() {
+  if (state.lic.loaded || state.lic.loading) return;
+  state.lic.loading = true;
+  state.lic.error = "";
+  renderLicenseResults();
   try {
-    const result = await fetchJson("api/sync/catalog", { method: "POST" });
-    state.syncStatus = result.after || null;
-    await loadInitialData();
-  } catch (error) {
-    state.syncError = "Synchronisation impossible";
-    render();
+    // Le backend plafonne limit à 1000 : on pagine jusqu'à tout récupérer.
+    const PAGE = 1000;
+    let skip = 0;
+    let total = Infinity;
+    const all = [];
+    while (skip < total) {
+      const data = await fetchJson("api/licenses", { params: { limit: PAGE, skip }, timeout: 15000 });
+      total = Number(data.total) || all.length;
+      (data.items || []).forEach((it) => all.push(normalizeLicense(it)));
+      if (!data.items || data.items.length < PAGE) break;
+      skip += PAGE;
+    }
+    state.lic.all = all;
+    state.lic.loaded = true;
+  } catch {
+    state.lic.error = "Chargement des licences impossible";
   } finally {
-    state.syncing = false;
-    render();
+    state.lic.loading = false;
+    renderLicenseResults();
   }
-};
+}
 
-const loadRemoteLicensesForSearch = async (force = false) => {
-  if (!state.apiOnline) return;
-  const query = state.query.trim();
-  const shouldSearch =
-    force ||
-    state.activeFamily === "Licences" ||
-    query.length >= 2 ||
-    state.cart.some((line) => line.source === "license");
-  if (!shouldSearch) return;
+function normalizeLicense(item) {
+  const pricing = item.pricing || {};
+  const publicPrice = Number(item.price ?? pricing.public_price ?? 0);
+  const pct = Number(pricing.discounts?.standard ?? 0);
+  return {
+    sku: item.sku,
+    source: "license",
+    name: item.name || item.sku,
+    vendor: item.vendor || "—",
+    edition: item.edition || "",
+    unit: item.unit || "licence",
+    term: pricing.term || "",
+    publicPrice,
+    discountPct: pct,
+    discountedPrice: publicPrice * (1 - pct / 100),
+    search: `${item.sku} ${item.name} ${item.vendor} ${item.edition} ${item.description || ""}`.toLowerCase(),
+  };
+}
 
-  const requestId = ++licenseSearchRequestId;
-  try {
-    const response = await fetchJson("api/licenses", {
-      params: { q: query || undefined, limit: 200 },
+/* ---------- Panier ---------- */
+const lineKey = (sku, source) => `${source}:${sku}`;
+const findLine = (sku, source) => state.cart.find((l) => l.sku === sku && l.source === source);
+
+function upsertLine(meta, qty) {
+  const q = clamp(Math.round(qty), meta.minQty || 1, 1e9);
+  const existing = findLine(meta.sku, meta.source);
+  if (existing) {
+    existing.quantity = q;
+  } else {
+    state.cart.push({
+      sku: meta.sku,
+      source: meta.source,
+      name: meta.name,
+      unit: meta.unit,
+      minQty: meta.minQty || 1,
+      quantity: q,
     });
-    if (requestId !== licenseSearchRequestId) return;
-    state.licenseTotal = response.total || response.items?.length || 0;
-    state.products = mergeProducts(
-      state.products.filter((item) => item.source !== "license" || isInCart(item.sku)),
-      (response.items || []).map(normalizeLicenseItem),
-    );
-    render();
-  } catch {
-    // Keep the catalog visible if license search fails.
   }
-};
+  persistCart();
+}
 
-const calculateRemoteQuote = async () => {
-  if (!state.apiOnline || state.cart.length === 0) {
+function bumpLine(sku, source, delta) {
+  const line = findLine(sku, source);
+  if (!line) return;
+  const next = (line.quantity || 0) + delta;
+  if (next < (line.minQty || 1)) {
+    removeLine(sku, source);
+    return;
+  }
+  line.quantity = next;
+  persistCart();
+}
+
+function removeLine(sku, source) {
+  state.cart = state.cart.filter((l) => !(l.sku === sku && l.source === source));
+  persistCart();
+}
+
+function clearCart() {
+  state.cart = [];
+  state.quote = null;
+  state.quoteLoading = false;
+  state.quoteError = "";
+  persistCart();
+}
+
+/* ---------- Devis temps réel ---------- */
+function scheduleQuote() {
+  window.clearTimeout(quoteTimer);
+  quoteTimer = window.setTimeout(runQuote, 220);
+}
+
+async function runQuote() {
+  if (!state.cart.length) {
     state.quote = null;
     state.quoteLoading = false;
-    render();
+    state.quoteError = "";
+    renderSummaryLines();
+    renderSummaryTotals();
+    return;
+  }
+  const reqId = ++quoteReq;
+  state.quoteLoading = true;
+  state.quoteError = "";
+  renderSummaryTotals();
+  try {
+    const body = {
+      lines: state.cart.map((l) => ({ sku: l.sku, quantity: l.quantity, source: l.source })),
+      period_months: state.period,
+      discount_percent: state.discount,
+    };
+    const data = await fetchJson("api/quote", { method: "POST", body: JSON.stringify(body) });
+    if (reqId !== quoteReq) return;
+    state.quote = data;
+  } catch {
+    if (reqId !== quoteReq) return;
+    state.quoteError = "Calcul indisponible";
+  } finally {
+    if (reqId === quoteReq) {
+      state.quoteLoading = false;
+      renderSummaryLines();
+      renderSummaryTotals();
+    }
+  }
+}
+
+const quoteLineFor = (sku, source) =>
+  state.quote?.lines?.find((l) => l.sku === sku && l.source === source);
+
+/* ---------- Rendu : prix ---------- */
+function priceBlock(publicPrice, discounted, pct, unit) {
+  const hasDiscount = pct > 0 && discounted < publicPrice - 0.0001;
+  return `
+    <div class="product__price">
+      ${hasDiscount ? `<div class="price__public">${esc(money(publicPrice))}</div>` : ""}
+      <div class="price__disc">${esc(money(discounted))}</div>
+      <div class="price__unit">/ ${esc(unit)}${hasDiscount ? ` · −${num(pct)}%` : ""}</div>
+    </div>`;
+}
+
+/* ---------- Squelette ---------- */
+function mount() {
+  app.innerHTML = `
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand__mark">${I.brand}</div>
+          <div class="brand__text">
+            <span class="brand__eyebrow">Cloud Temple</span>
+            <span class="brand__title">Calculateur d'offre Cloud</span>
+          </div>
+        </div>
+        <div class="topbar__spacer"></div>
+        <div class="topbar__tools">
+          <div class="field-inline">
+            <label for="project">Nom de la cotation</label>
+            <input id="project" class="input input--project" placeholder="Nommer cette cotation" title="Renomme l'onglet actif" value="${esc(state.projectName)}" />
+          </div>
+          <span id="api-status"></span>
+          <button class="btn btn--ghost btn--sm" data-set-api title="Configurer l'URL de l'API">${I.gear} API</button>
+        </div>
+      </header>
+
+      <nav class="quote-tabs" id="quote-tabs" aria-label="Cotations"></nav>
+
+      <div id="banner-slot"></div>
+
+      <div class="layout">
+        <section class="catalog">
+          <div class="catalog__head">
+            <h1 class="catalog__title">Composez votre offre</h1>
+            <p class="catalog__subtitle">Dépliez une famille, ajoutez des produits, le budget se calcule en temps réel.</p>
+          </div>
+          <div class="catalog-toolbar">
+            <div class="search-box">
+              ${I.search}
+              <input id="q-global" class="input" placeholder="Rechercher un produit (nom, SKU, type…)" value="${esc(state.search)}" />
+            </div>
+            <button class="btn btn--ghost" data-toggle-all>Tout déplier</button>
+          </div>
+          <div id="catalog-groups"></div>
+        </section>
+
+        <aside id="summary-slot">${summarySkeleton()}</aside>
+      </div>
+    </div>`;
+  renderQuoteControls();
+  wireEvents();
+}
+
+function quoteTabsHtml() {
+  const tabs = state.quotes
+    .map((q, i) => {
+      const active = q.id === state.activeQuoteId;
+      const label = quoteLabel(q, i);
+      const lineCount = q.cart.length;
+      return `
+        <button class="quote-tab ${active ? "is-active" : ""}" data-quote-switch="${esc(q.id)}" title="${esc(label)}">
+          <span class="quote-tab__label">${esc(label)}</span>
+          <span class="quote-tab__count">${num(lineCount)}</span>
+          ${
+            state.quotes.length > 1
+              ? `<span class="quote-tab__close" data-quote-close="${esc(q.id)}" title="Fermer la cotation">${I.close}</span>`
+              : ""
+          }
+        </button>`;
+    })
+    .join("");
+  return `
+    <div class="quote-tabs__list">${tabs}</div>
+    <div class="quote-tabs__actions">
+      <button class="btn btn--ghost btn--sm" data-quote-duplicate title="Dupliquer la cotation active">${I.copy} Dupliquer</button>
+      <button class="btn btn--primary btn--sm" data-quote-new title="Nouvelle cotation">${I.plus} Nouvelle</button>
+    </div>`;
+}
+
+function renderQuoteControls() {
+  const tabs = document.querySelector("#quote-tabs");
+  if (tabs) tabs.innerHTML = quoteTabsHtml();
+
+  const project = document.querySelector("#project");
+  if (project && project.value !== state.projectName) project.value = state.projectName;
+
+  const period = document.querySelector("#period-select");
+  if (period) period.value = String(state.period);
+
+  const discNum = document.querySelector("#discount-num");
+  if (discNum && Number(discNum.value) !== state.discount) discNum.value = String(state.discount);
+
+  const discRange = document.querySelector("#discount-range");
+  if (discRange) discRange.value = String(clamp(state.discount, 0, 60));
+
+  const discVal = document.querySelector("#discount-val");
+  if (discVal) discVal.textContent = `${num(state.discount)} %`;
+}
+
+function summarySkeleton() {
+  const periodOpts = PERIODS.map(
+    (p) => `<option value="${p}" ${p === state.period ? "selected" : ""}>${p === 1 ? "1 mois" : p % 12 === 0 ? `${p / 12} an${p / 12 > 1 ? "s" : ""}` : `${p} mois`}</option>`
+  ).join("");
+  return `
+    <div class="summary">
+      <div class="summary__head">
+        <h2>Résumé financier</h2>
+        <span class="summary__badge" id="count-badge">0 ligne</span>
+        <button class="btn btn--danger-ghost btn--sm" data-clear hidden id="clear-btn">Vider</button>
+      </div>
+      <div class="summary__config">
+        <div class="cfg">
+          <label for="period-select">Projection</label>
+          <select id="period-select" class="input">${periodOpts}</select>
+        </div>
+        <div class="cfg">
+          <label for="discount-num">Remise commerciale</label>
+          <input id="discount-num" class="input" type="number" min="0" max="100" step="1" value="${state.discount}" />
+        </div>
+        <div class="cfg cfg--discount">
+          <div class="discount-row">
+            <input id="discount-range" type="range" min="0" max="60" step="1" value="${clamp(state.discount, 0, 60)}" />
+            <span class="discount-val" id="discount-val">${num(state.discount)} %</span>
+          </div>
+        </div>
+      </div>
+      <div class="summary__lines" id="summary-lines"></div>
+      <div class="summary__totals" id="summary-totals"></div>
+      <div class="summary__export" id="summary-export">
+        <button class="export-btn" data-export="xlsx" title="Télécharger en Excel">${I.download} Excel</button>
+        <button class="export-btn" data-export="pdf" title="Télécharger en PDF">${I.download} PDF</button>
+        <button class="export-btn" data-export="html" title="Télécharger en HTML (imprimable)">${I.download} HTML</button>
+      </div>
+      <div class="summary__foot">Tarifs HT en euros · remise standard catalogue appliquée automatiquement</div>
+    </div>`;
+}
+
+/* ---------- Rendu : statut + bandeau ---------- */
+function renderStatus() {
+  const el = document.querySelector("#api-status");
+  if (!el) return;
+  if (state.online) {
+    const h = state.health || {};
+    el.outerHTML = `<span id="api-status" class="status-pill is-online"><span class="dot"></span>En ligne · ${num(h.catalog_items)} produits · ${num(h.license_items)} licences</span>`;
+  } else {
+    el.outerHTML = `<span id="api-status" class="status-pill is-offline"><span class="dot"></span>Hors ligne</span>`;
+  }
+}
+
+function renderBanner() {
+  const slot = document.querySelector("#banner-slot");
+  if (!slot) return;
+  if (state.online || state.loading) {
+    slot.innerHTML = "";
+    return;
+  }
+  slot.innerHTML = `
+    <div class="banner">
+      <span class="banner__icon">${I.warn}</span>
+      <div>
+        <div class="banner__title">API indisponible sur <code>${esc(API_BASE)}</code></div>
+        <div class="banner__text">${esc(state.apiError || "Le backend FastAPI du calculateur doit être démarré.")}</div>
+      </div>
+      <div class="banner__actions">
+        <button class="btn btn--sm" data-set-api>Changer l'URL</button>
+        <button class="btn btn--primary btn--sm" data-retry>Réessayer</button>
+      </div>
+    </div>`;
+}
+
+/* ---------- Rendu : catalogue ---------- */
+function matchProduct(p, q) {
+  if (!q) return true;
+  const hay = `${p.name} ${p.sku} ${p.description} ${p.category} ${p.type} ${p.subType} ${p.tags.join(" ")}`.toLowerCase();
+  return q.split(/\s+/).filter(Boolean).every((tok) => hay.includes(tok));
+}
+
+function visibleProducts(familyId) {
+  const list = state.catalogByFamily.get(familyId) || [];
+  const q = state.search.trim().toLowerCase();
+  return q ? list.filter((p) => matchProduct(p, q)) : list;
+}
+
+function renderCatalog() {
+  const root = document.querySelector("#catalog-groups");
+  if (!root) return;
+
+  if (state.loading) {
+    root.innerHTML = `<div class="loading-block"><div class="spinner"></div>Chargement du catalogue…</div>`;
+    return;
+  }
+  if (!state.online) {
+    root.innerHTML = `<div class="loading-block">Catalogue indisponible tant que l'API est hors ligne.</div>`;
     return;
   }
 
-  const requestId = ++quoteRequestId;
-  state.quoteLoading = true;
-  state.quoteError = "";
-  render();
+  const q = state.search.trim().toLowerCase();
 
-  try {
-    const quote = await fetchJson("api/quote", {
-      method: "POST",
-      body: JSON.stringify({
-        period_months: state.period,
-        discount_percent: state.discount,
-        lines: state.cart.map((line) => ({
-          sku: line.sku,
-          quantity: line.quantity,
-          source: line.source || "auto",
-        })),
-      }),
+  // En recherche, on charge les licences une seule fois pour qu'elles participent aux résultats.
+  if (q && !state.lic.loaded && !state.lic.loading) {
+    loadLicenses().then(() => {
+      if (state.search.trim()) renderCatalog();
     });
-    if (requestId !== quoteRequestId) return;
-    state.quote = quote;
+  }
+
+  let html = "";
+
+  GROUPS.forEach((group) => {
+    const fams = FAMILIES.filter((f) => f.group === group.id);
+    const cards = fams
+      .map((f) => familyCard(f, q))
+      .filter(Boolean)
+      .join("");
+    if (!cards) return;
+    html += `<div class="group"><div class="group__label">${esc(group.label)}</div>${cards}</div>`;
+  });
+
+  // Bandeau récapitulatif des résultats de recherche.
+  if (q) {
+    let prodMatches = 0;
+    let famMatches = 0;
+    FAMILIES.forEach((f) => {
+      if (f.kind === "licenses") return;
+      const m = (state.catalogByFamily.get(f.id) || []).filter((p) => matchProduct(p, q)).length;
+      if (m) {
+        prodMatches += m;
+        famMatches += 1;
+      }
+    });
+    const licMatches = state.lic.loaded ? filteredLicenses().length : null;
+    const parts = [];
+    if (prodMatches) parts.push(`<strong>${num(prodMatches)}</strong> produit${prodMatches > 1 ? "s" : ""} dans ${num(famMatches)} famille${famMatches > 1 ? "s" : ""}`);
+    if (licMatches === null) parts.push(`recherche des licences…`);
+    else if (licMatches) parts.push(`<strong>${num(licMatches)}</strong> licence${licMatches > 1 ? "s" : ""}`);
+    const summaryText = parts.length ? parts.join(" · ") : "Aucun résultat";
+    html =
+      `<div class="search-summary">
+        <span class="search-summary__txt">${summaryText} pour « ${esc(state.search.trim())} »</span>
+        <button class="search-summary__clear" data-clear-search>Effacer</button>
+      </div>` + html;
+  }
+
+  root.innerHTML = html || `<div class="loading-block">Aucun résultat pour « ${esc(state.search)} ».</div>`;
+
+  if (state.expanded.has("licenses") || q) renderLicenseResults();
+}
+
+function familyCard(f, q) {
+  if (f.kind === "licenses") {
+    const total = state.health?.license_items || (state.lic.loaded ? state.lic.all.length : 0);
+    const searching = !!q;
+    let countLabel = total ? num(total) : "—";
+    if (searching) {
+      if (state.lic.loaded) {
+        const n = filteredLicenses().length;
+        if (!n) return ""; // aucune licence ne correspond → on masque la carte en recherche
+        countLabel = `<em>${num(n)}</em> / ${total ? num(total) : "—"}`;
+      } else {
+        countLabel = "…"; // licences en cours de chargement, comptage à venir
+      }
+    }
+    // En recherche, la famille s'ouvre d'office (la recherche globale pilote son filtre via state.lic.query).
+    const open = state.expanded.has(f.id) || searching;
+    return `
+      <div class="family ${open ? "is-open" : ""}" data-family="${f.id}">
+        <button class="family__head" data-family-toggle="${f.id}">
+          <span class="family__icon">${familyIcon(f)}</span>
+          <span class="family__meta">
+            <span class="family__name">${esc(f.label)}</span>
+            <span class="family__tag">${esc(f.tag)}</span>
+          </span>
+          <span class="family__count">${countLabel}</span>
+          <span class="family__chevron">${I.chevron}</span>
+        </button>
+        ${open ? `<div class="family__body">${licensePanelShell()}</div>` : ""}
+      </div>`;
+  }
+
+  const all = state.catalogByFamily.get(f.id) || [];
+  if (!all.length) return "";
+  const items = q ? all.filter((p) => matchProduct(p, q)) : all;
+  if (q && !items.length) return "";
+
+  const open = state.expanded.has(f.id) || (q && items.length > 0);
+  const countLabel = q ? `<em>${items.length}</em> / ${all.length}` : num(all.length);
+
+  return `
+    <div class="family ${open ? "is-open" : ""}" data-family="${f.id}">
+      <button class="family__head" data-family-toggle="${f.id}">
+        <span class="family__icon">${familyIcon(f)}</span>
+        <span class="family__meta">
+          <span class="family__name">${esc(f.label)}</span>
+          <span class="family__tag">${esc(f.tag)}</span>
+        </span>
+        <span class="family__count">${countLabel}</span>
+        <span class="family__chevron">${I.chevron}</span>
+      </button>
+      ${open ? `<div class="family__body">${items.map(productRow).join("")}</div>` : ""}
+    </div>`;
+}
+
+function productRow(p) {
+  const line = findLine(p.sku, p.source);
+  const tags = [
+    `<span class="chip chip--sku">${highlight(p.sku, state.search)}</span>`,
+    p.snc ? `<span class="chip chip--snc">SecNumCloud</span>` : "",
+    p.engagement && engagementMonths(p.engagement) > 1 ? `<span class="chip chip--eng">${esc(p.engagement)}</span>` : "",
+    ...p.tags.map((t) => `<span class="chip">${highlight(t, state.search)}</span>`),
+  ]
+    .filter(Boolean)
+    .join("");
+
+  const action = line
+    ? stepper(p.sku, p.source, line.quantity)
+    : `<div class="add-control">
+         <input class="qty-input" type="number" min="${p.minQty}" step="1" value="${p.baseQty}" data-qty-input="${esc(lineKey(p.sku, p.source))}" aria-label="Quantité" />
+         <button class="btn btn--primary btn--sm" data-add="${esc(p.sku)}">Ajouter</button>
+       </div>`;
+
+  return `
+    <div class="product ${line ? "is-in-cart" : ""}">
+      <div class="product__main">
+        <div class="product__name">${highlight(p.name, state.search)}</div>
+        ${p.description ? `<div class="product__desc">${highlight(p.description, state.search)}</div>` : ""}
+        <div class="product__tags">${tags}</div>
+      </div>
+      ${priceBlock(p.publicPrice, p.discountedPrice, p.discountPct, p.unit)}
+      <div class="product__action">${action}</div>
+    </div>`;
+}
+
+function stepper(sku, source, qty) {
+  const k = esc(lineKey(sku, source));
+  return `
+    <div class="stepper">
+      <button data-step="dec" data-sku="${esc(sku)}" data-source="${source}" aria-label="Diminuer">−</button>
+      <input type="number" min="1" value="${qty}" data-qty-edit="${k}" data-sku="${esc(sku)}" data-source="${source}" aria-label="Quantité" />
+      <button data-step="inc" data-sku="${esc(sku)}" data-source="${source}" aria-label="Augmenter">+</button>
+    </div>`;
+}
+
+/* ---------- Rendu : panneau licences ---------- */
+function licensePanelShell() {
+  return `
+    <div class="lic">
+      <div class="lic-toolbar">
+        <div class="search-box">
+          ${I.search}
+          <input id="lic-q" class="input" placeholder="Rechercher une licence (nom, SKU, éditeur…)" value="${esc(state.lic.query)}" />
+        </div>
+        <select id="lic-vendor" class="input"><option value="">Tous éditeurs</option></select>
+        <select id="lic-term" class="input"><option value="">Tous termes</option></select>
+        <span class="lic-count" id="lic-count">—</span>
+      </div>
+      <div id="lic-results"></div>
+      <div class="lic-pager" id="lic-pager"></div>
+    </div>`;
+}
+
+function filteredLicenses() {
+  const { query, vendor, term } = state.lic;
+  const q = query.trim().toLowerCase();
+  return state.lic.all.filter((l) => {
+    if (vendor && l.vendor !== vendor) return false;
+    if (term && l.term !== term) return false;
+    if (q && !q.split(/\s+/).filter(Boolean).every((tok) => l.search.includes(tok))) return false;
+    return true;
+  });
+}
+
+function renderLicenseResults() {
+  const results = document.querySelector("#lic-results");
+  const pager = document.querySelector("#lic-pager");
+  const count = document.querySelector("#lic-count");
+  if (!results) return;
+
+  if (state.lic.loading) {
+    results.innerHTML = `<div class="lic-loading"><div class="spinner"></div>Chargement de ${num(state.health?.license_items || 8000)} licences…</div>`;
+    if (pager) pager.innerHTML = "";
+    if (count) count.textContent = "—";
+    return;
+  }
+  if (state.lic.error) {
+    results.innerHTML = `<div class="lic-empty">${esc(state.lic.error)}</div>`;
+    return;
+  }
+  if (!state.lic.loaded) {
+    results.innerHTML = `<div class="lic-empty">Ouverture du catalogue de licences…</div>`;
+    return;
+  }
+
+  populateLicenseFilters();
+
+  const filtered = filteredLicenses();
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  if (state.lic.page > pages) state.lic.page = pages;
+  const start = (state.lic.page - 1) * PAGE_SIZE;
+  const slice = filtered.slice(start, start + PAGE_SIZE);
+
+  if (count) count.textContent = `${num(filtered.length)} / ${num(state.lic.all.length)}`;
+
+  if (!slice.length) {
+    results.innerHTML = `<div class="lic-empty">Aucune licence ne correspond à ces critères.</div>`;
+    if (pager) pager.innerHTML = "";
+    return;
+  }
+
+  results.innerHTML = `<div class="lic-table">${slice.map(licenseRow).join("")}</div>`;
+
+  if (pager) {
+    pager.innerHTML = `
+      <span>${num(filtered.length)} licence${filtered.length > 1 ? "s" : ""} · page ${state.lic.page}/${pages}</span>
+      <span class="lic-pager__nav">
+        <button class="btn btn--sm" data-lic-page="prev" ${state.lic.page <= 1 ? "disabled" : ""}>← Préc.</button>
+        <button class="btn btn--sm" data-lic-page="next" ${state.lic.page >= pages ? "disabled" : ""}>Suiv. →</button>
+      </span>`;
+  }
+}
+
+let licenseFiltersReady = false;
+function populateLicenseFilters() {
+  if (licenseFiltersReady) return;
+  const vendorSel = document.querySelector("#lic-vendor");
+  const termSel = document.querySelector("#lic-term");
+  if (!vendorSel || !termSel) return;
+  const vendors = [...new Set(state.lic.all.map((l) => l.vendor).filter(Boolean))].sort((a, b) => a.localeCompare(b, "fr"));
+  vendorSel.innerHTML =
+    `<option value="">Tous éditeurs</option>` +
+    vendors.map((v) => `<option value="${esc(v)}" ${state.lic.vendor === v ? "selected" : ""}>${esc(v)}</option>`).join("");
+  const terms = [...new Set(state.lic.all.map((l) => l.term).filter(Boolean))];
+  termSel.innerHTML =
+    `<option value="">Tous termes</option>` +
+    terms.map((t) => `<option value="${esc(t)}" ${state.lic.term === t ? "selected" : ""}>${esc(termLabel(t))}</option>`).join("");
+  licenseFiltersReady = true;
+}
+
+function licenseRow(l) {
+  const line = findLine(l.sku, l.source);
+  const hasDisc = l.discountPct > 0;
+  const action = line
+    ? stepper(l.sku, l.source, line.quantity)
+    : `<button class="icon-btn" data-add="${esc(l.sku)}" data-source="license" title="Ajouter">+</button>`;
+  return `
+    <div class="lic-row ${line ? "is-in-cart" : ""}">
+      <span class="lic-row__sku">${highlight(l.sku, state.lic.query)}</span>
+      <span class="lic-row__name" title="${esc(l.name)}">${highlight(l.name, state.lic.query)}</span>
+      <span class="lic-row__vendor">${highlight(l.vendor, state.lic.query)}</span>
+      <span class="lic-row__term">${l.term ? `<span class="chip">${esc(termLabel(l.term))}</span>` : ""}</span>
+      <span class="lic-row__price">${esc(money(hasDisc ? l.discountedPrice : l.publicPrice))}</span>
+      <span class="lic-row__action">${action}</span>
+    </div>`;
+}
+
+/* ---------- Rendu : résumé financier ---------- */
+function renderSummaryLines() {
+  const root = document.querySelector("#summary-lines");
+  const badge = document.querySelector("#count-badge");
+  const clearBtn = document.querySelector("#clear-btn");
+  if (!root) return;
+
+  if (badge) badge.textContent = `${state.cart.length} ligne${state.cart.length > 1 ? "s" : ""}`;
+  if (clearBtn) clearBtn.hidden = state.cart.length === 0;
+  document.querySelectorAll("#summary-export .export-btn").forEach((b) => {
+    if (!b.dataset.busy) b.disabled = state.cart.length === 0;
+  });
+
+  if (!state.cart.length) {
+    root.innerHTML = `
+      <div class="summary__empty">
+        ${I.cart}
+        <div>Votre devis est vide.<br />Dépliez une famille et ajoutez des produits.</div>
+      </div>`;
+    return;
+  }
+
+  root.innerHTML = state.cart
+    .map((l) => {
+      const ql = quoteLineFor(l.sku, l.source);
+      const unit = ql?.unit || l.unit || "unité";
+      const unitPrice = ql ? ql.discounted_unit_price : null;
+      const monthly = ql ? ql.monthly_total : null;
+      const publicMonthly = ql ? ql.public_unit_price * ql.quantity : null;
+      const showPub = publicMonthly !== null && monthly !== null && publicMonthly > monthly + 0.001;
+      const sub = unitPrice !== null ? `${num(l.quantity)} × ${money(unitPrice)} / ${esc(unit)}` : `${num(l.quantity)} × ${esc(unit)}`;
+      // Détail des remises et de l'engagement appliqués à la ligne (issus de l'API).
+      const meta = [];
+      if (ql && ql.standard_discount_percent > 0) meta.push(`<span class="cl-chip cl-chip--std">−${num(ql.standard_discount_percent)}% catalogue</span>`);
+      if (state.discount > 0) meta.push(`<span class="cl-chip cl-chip--com">−${num(state.discount)}% commerciale</span>`);
+      if (ql && ql.engagement_months > 1) meta.push(`<span class="cl-chip cl-chip--eng">engagement ${num(ql.engagement_months)} mois</span>`);
+      const engTot = ql && ql.engagement_total ? ql.engagement_total : null;
+      return `
+        <div class="cart-line">
+          <div>
+            <div class="cart-line__name" title="${esc(l.name)}">${esc(ql?.name || l.name)}</div>
+            <div class="cart-line__sub">${sub}</div>
+            ${meta.length ? `<div class="cart-line__meta">${meta.join("")}</div>` : ""}
+          </div>
+          <div class="cart-line__total">
+            ${showPub ? `<span class="pub">${esc(money(publicMonthly))}</span>` : ""}
+            ${monthly !== null ? `${esc(money(monthly))}<span class="per">/mois</span>` : "…"}
+            ${engTot !== null ? `<span class="eng-tot">${esc(money(engTot))} sur engagement</span>` : ""}
+          </div>
+          <div class="cart-line__ctrl">
+            ${stepper(l.sku, l.source, l.quantity)}
+            <button class="btn btn--danger-ghost btn--sm cart-line__remove" data-remove="${esc(l.sku)}" data-source="${l.source}">${I.trash} Retirer</button>
+          </div>
+        </div>`;
+    })
+    .join("");
+}
+
+// Libellé de famille pour une ligne de devis (sert au regroupement du résumé et de l'export).
+function familyLabelForLine(ql) {
+  if (ql.source === "license") return "Licences éditeurs";
+  const p = state.catalog.find((x) => x.sku === ql.sku);
+  const fam = p && FAMILIES.find((f) => f.id === p.familyId);
+  return fam ? fam.label : "Autres";
+}
+
+const periodLabel = (months) =>
+  months === 1 ? "1 mois" : months % 12 === 0 ? `${months / 12} an${months / 12 > 1 ? "s" : ""}` : `${months} mois`;
+
+function renderSummaryTotals() {
+  const root = document.querySelector("#summary-totals");
+  if (!root) return;
+
+  if (!state.cart.length) {
+    root.innerHTML = "";
+    return;
+  }
+  if (state.quoteError) {
+    root.innerHTML = `<div class="total-sub" style="color:var(--danger)">${esc(state.quoteError)}</div>`;
+    return;
+  }
+  const q = state.quote;
+  if (!q) {
+    root.innerHTML = `<div class="total-sub">${state.quoteLoading ? "Calcul en cours…" : ""}</div>`;
+    return;
+  }
+
+  const monthsLabel = periodLabel(state.period);
+
+  // Répartition mensuelle par famille.
+  const byFamily = new Map();
+  q.lines.forEach((ql) => {
+    const key = familyLabelForLine(ql);
+    const acc = byFamily.get(key) || { monthly: 0, count: 0 };
+    acc.monthly += ql.monthly_total;
+    acc.count += 1;
+    byFamily.set(key, acc);
+  });
+  const famRows = [...byFamily.entries()]
+    .sort((a, b) => b[1].monthly - a[1].monthly)
+    .map(
+      ([label, v]) =>
+        `<div class="fam-row"><span class="fam-row__lbl">${esc(label)}<span class="fam-row__n">${num(v.count)}</span></span><span class="fam-row__val">${esc(money(v.monthly))}<span class="per">/mois</span></span></div>`
+    )
+    .join("");
+
+  // Répartition des remises (mensuel) : part catalogue (standard) vs part commerciale.
+  let stdSaving = 0;
+  let afterStd = 0;
+  q.lines.forEach((ql) => {
+    const pubM = ql.public_unit_price * ql.quantity;
+    const afterStdM = ql.public_unit_price * (1 - (ql.standard_discount_percent || 0) / 100) * ql.quantity;
+    stdSaving += pubM - afterStdM;
+    afterStd += afterStdM;
+  });
+  const comSaving = afterStd * ((q.discount_percent || 0) / 100);
+
+  const breakdown = [];
+  if (stdSaving > 0.005) breakdown.push(`<div class="total-row total-row--sub"><span class="lbl">↳ dont remise catalogue</span><span class="val">−${esc(money(stdSaving))}</span></div>`);
+  if (comSaving > 0.005) breakdown.push(`<div class="total-row total-row--sub"><span class="lbl">↳ dont remise commerciale</span><span class="val">−${esc(money(comSaving))}</span></div>`);
+
+  root.innerHTML = `
+    ${byFamily.size > 1 ? `<div class="fam-block"><div class="fam-block__title">Répartition mensuelle</div>${famRows}</div>` : ""}
+    <div class="total-row total-row--muted"><span class="lbl">Mensuel public</span><span class="val">${esc(money(q.monthly_public_total))}</span></div>
+    ${breakdown.join("")}
+    <div class="total-row total-row--main">
+      <span class="lbl">Total mensuel remisé</span>
+      <span class="val">${esc(money(q.monthly_discounted_total))}<span class="per per--main">/mois</span></span>
+    </div>
+    <div class="total-row"><span class="lbl">Projection ${esc(monthsLabel)}</span><span class="val">${esc(money(q.period_discounted_total))}</span></div>
+    <div class="total-row"><span class="lbl">Total à l'engagement</span><span class="val">${esc(money(q.total_on_engagement))}</span></div>
+    <div class="total-row total-row--save"><span class="lbl">Économie sur ${esc(monthsLabel)}</span><span class="val">${esc(money(q.savings_total))}</span></div>
+    ${state.quoteLoading ? `<div class="total-sub">Mise à jour…</div>` : ""}`;
+}
+
+/* ---------- Rendu global ---------- */
+function render() {
+  renderQuoteControls();
+  renderStatus();
+  renderBanner();
+  renderCatalog();
+  renderSummaryLines();
+  renderSummaryTotals();
+}
+
+/* ---------- Événements ---------- */
+function wireEvents() {
+  app.addEventListener("click", onClick);
+  app.addEventListener("input", onInput);
+  app.addEventListener("change", onChange);
+}
+
+function onClick(e) {
+  const t = e.target.closest("[data-family-toggle],[data-toggle-all],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close]");
+  if (!t) return;
+
+  if (t.dataset.quoteClose) {
+    e.stopPropagation();
+    closeQuote(t.dataset.quoteClose);
+    return;
+  }
+
+  if (t.dataset.quoteSwitch) {
+    setActiveQuote(t.dataset.quoteSwitch);
+    return;
+  }
+
+  if (t.hasAttribute("data-quote-new")) {
+    addQuote();
+    return;
+  }
+
+  if (t.hasAttribute("data-quote-duplicate")) {
+    duplicateQuote();
+    return;
+  }
+
+  if (t.dataset.export) {
+    exportQuote(t.dataset.export, t);
+    return;
+  }
+
+  if (t.hasAttribute("data-clear-search")) {
+    state.search = "";
+    state.lic.query = "";
+    state.lic.page = 1;
+    const input = document.querySelector("#q-global");
+    if (input) input.value = "";
+    renderCatalog();
+    return;
+  }
+
+  if (t.dataset.familyToggle) {
+    const id = t.dataset.familyToggle;
+    if (state.expanded.has(id)) state.expanded.delete(id);
+    else {
+      state.expanded.add(id);
+      if (id === "licenses") loadLicenses();
+    }
+    renderCatalog();
+    return;
+  }
+
+  if (t.hasAttribute("data-toggle-all")) {
+    const allIds = FAMILIES.filter((f) => f.kind === "licenses" || (state.catalogByFamily.get(f.id) || []).length).map((f) => f.id);
+    const allOpen = allIds.every((id) => state.expanded.has(id));
+    if (allOpen) {
+      state.expanded.clear();
+      t.textContent = "Tout déplier";
+    } else {
+      allIds.forEach((id) => state.expanded.add(id));
+      if (state.expanded.has("licenses")) loadLicenses();
+      t.textContent = "Tout replier";
+    }
+    renderCatalog();
+    return;
+  }
+
+  if (t.dataset.add) {
+    const sku = t.dataset.add;
+    const source = t.dataset.source || "catalog";
+    addProduct(sku, source);
+    return;
+  }
+
+  if (t.dataset.step) {
+    const { sku, source } = t.dataset;
+    bumpLine(sku, source, t.dataset.step === "inc" ? 1 : -1);
+    afterCartChange(source);
+    return;
+  }
+
+  if (t.dataset.remove) {
+    removeLine(t.dataset.remove, t.dataset.source || "catalog");
+    afterCartChange(t.dataset.source || "catalog");
+    return;
+  }
+
+  if (t.hasAttribute("data-clear")) {
+    clearCart();
+    renderCatalog();
+    renderSummaryLines();
+    renderSummaryTotals();
+    scheduleQuote();
+    return;
+  }
+
+  if (t.dataset.licPage) {
+    state.lic.page += t.dataset.licPage === "next" ? 1 : -1;
+    state.lic.page = Math.max(1, state.lic.page);
+    renderLicenseResults();
+    return;
+  }
+
+  if (t.hasAttribute("data-set-api")) {
+    const next = window.prompt("URL de l'API du calculateur :", API_BASE);
+    if (next && next.trim()) {
+      localStorage.setItem("calculatorApiBase", next.trim());
+      window.location.reload();
+    }
+    return;
+  }
+
+  if (t.hasAttribute("data-retry")) {
+    loadAll();
+  }
+}
+
+function addProduct(sku, source) {
+  const meta = source === "license" ? state.lic.all.find((l) => l.sku === sku) : state.catalog.find((p) => p.sku === sku);
+  if (!meta) return;
+
+  // Quantité saisie dans la ligne produit (catalogue) sinon valeur par défaut.
+  const input = document.querySelector(`[data-qty-input="${CSS.escape(lineKey(sku, source))}"]`);
+  const qty = input ? Number(input.value) : source === "license" ? 1 : meta.baseQty || 1;
+  upsertLine(meta, qty || meta.minQty || 1);
+  afterCartChange(source);
+}
+
+// Met à jour l'affichage après une modification du panier sans casser le focus de la recherche licences.
+function afterCartChange(source) {
+  if (source === "license") {
+    renderLicenseResults();
+  } else {
+    renderCatalog();
+  }
+  renderQuoteControls();
+  renderSummaryLines();
+  renderSummaryTotals();
+  scheduleQuote();
+}
+
+// Exporte le devis courant (xlsx | pdf | html) : POST du panier puis téléchargement du fichier renvoyé.
+async function exportQuote(format, btn) {
+  if (!state.cart.length) return;
+  const label = btn ? btn.innerHTML : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.dataset.busy = "1";
+    btn.textContent = "…";
+  }
+  try {
+    const body = {
+      lines: state.cart.map((l) => ({ sku: l.sku, quantity: l.quantity, source: l.source })),
+      period_months: state.period,
+      discount_percent: state.discount,
+      project: state.projectName || "",
+      date: new Date().toLocaleDateString("fr-FR"),
+    };
+    const res = await fetch(buildUrl("api/quote/export", { format }), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const cd = res.headers.get("content-disposition") || "";
+    const match = /filename="([^"]+)"/.exec(cd);
+    const filename = match ? match[1] : `devis-cloud-temple.${format}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    if (btn) btn.innerHTML = label;
   } catch {
-    if (requestId !== quoteRequestId) return;
-    state.quote = null;
-    state.quoteError = "Calcul API impossible";
+    if (btn) {
+      btn.textContent = "Erreur";
+      window.setTimeout(() => (btn.innerHTML = label), 1600);
+    }
   } finally {
-    if (requestId === quoteRequestId) {
-      state.quoteLoading = false;
-      render();
+    if (btn) {
+      delete btn.dataset.busy;
+      btn.disabled = state.cart.length === 0;
     }
   }
-};
+}
 
-const itemRow = (item) => {
-  const selected = isInCart(item.sku);
-  const tags = item.tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("");
-  return `
-    <article class="catalog-row">
-      <div class="catalog-row__main">
-        <div class="catalog-row__title">
-          <strong>${escapeHtml(item.name)}</strong>
-          <code>${escapeHtml(item.sku)}</code>
-        </div>
-        <p>${escapeHtml(item.description || "Description non renseignee")}</p>
-        <div class="tag-row">${tags}</div>
-      </div>
-      <div class="catalog-row__meta">
-        <span>${escapeHtml(item.family)}</span>
-        <span>${escapeHtml(item.type)}</span>
-        ${item.subType ? `<span>${escapeHtml(item.subType)}</span>` : ""}
-      </div>
-      <div class="catalog-row__price">
-        <strong>${formatMoney(item.price)}</strong>
-        <span>/${escapeHtml(item.unit)}</span>
-      </div>
-      <button class="row-action ${selected ? "is-selected" : ""}" data-add="${escapeHtml(item.sku)}" data-source="${escapeHtml(item.source)}">
-        ${selected ? "Ajoute" : "Ajouter"}
-      </button>
-    </article>
-  `;
-};
+function onInput(e) {
+  const el = e.target;
 
-const cartLine = (line) => `
-  <li class="cart-line">
-    <div class="cart-line__main">
-      <div>
-        <strong>${escapeHtml(line.name)}</strong>
-        <span>${escapeHtml(line.sku)}</span>
-      </div>
-      <button class="ghost-icon" data-remove="${escapeHtml(line.sku)}" aria-label="Retirer">×</button>
-    </div>
-    <div class="cart-line__controls">
-      <label>
-        <span>Quantité</span>
-        <input type="number" min="${line.minQuantity}" value="${line.quantity}" data-quantity="${escapeHtml(line.sku)}" />
-      </label>
-      <div class="line-total">
-        <span>${formatMoney(line.apiLine?.public_unit_price ?? line.price)} / ${escapeHtml(line.unit)}</span>
-        <strong>${formatMoney(getLineTotal(line))}</strong>
-      </div>
-    </div>
-  </li>
-`;
-
-const sidebarButton = (item, active, attr) => `
-  <button class="${active ? "active" : ""}" ${attr}="${escapeHtml(item.label)}">
-    <span>${escapeHtml(item.label)}</span>
-    <strong>${formatNumber(item.count)}</strong>
-  </button>
-`;
-
-const render = () => {
-  const activeElement = document.activeElement;
-  const restoreSearch =
-    activeElement && activeElement.matches && activeElement.matches(".search-box input");
-  const searchSelection = restoreSearch ? activeElement.selectionStart : null;
-
-  const visibleProducts = getVisibleProducts();
-  const totals = getTotals();
-  const families = getFamilies();
-  const types = getTypes();
-  const quoteMode = state.quoteLoading
-    ? "Calcul en cours"
-    : state.quote
-      ? "API"
-      : state.quoteError || "Pret";
-  const sync = state.syncStatus;
-  const syncLabel = !state.apiOnline
-    ? "Non disponible"
-    : state.syncing
-      ? "Synchronisation..."
-      : sync?.is_synchronized
-        ? "Synchronisé"
-        : sync?.needs_sync
-          ? "À synchroniser"
-          : "Statut inconnu";
-  const syncDelta = sync?.delta
-    ? `${formatNumber(sync.delta.new_count || 0)} nouveaux · ${formatNumber(sync.delta.modified_count || 0)} modifiés · ${sync.delta.removed_count === null || sync.delta.removed_count === undefined ? "-" : formatNumber(sync.delta.removed_count)} supprimés`
-    : state.syncError || "Delta non chargé";
-
-  app.innerHTML = `
-    <main class="shell">
-      <header class="topbar">
-        <div class="brand">
-          <span class="brand-mark">CT</span>
-          <div>
-            <strong>Cloud Temple Calculator</strong>
-            <span>Catalogue YAML QuoteFlow extrait en application autonome</span>
-          </div>
-        </div>
-          <div class="topbar__meta">
-            <span class="status-pill ${state.apiOnline ? "is-online" : "is-offline"}">${state.apiOnline ? "API connectée" : "API hors ligne"}</span>
-            <span class="sync-pill ${sync?.is_synchronized ? "is-synced" : "needs-sync"}">${escapeHtml(syncLabel)}</span>
-            <span>${formatNumber(state.health?.catalog_items || state.catalogTotal)} produits</span>
-            <span>${formatNumber(state.health?.license_items || state.licenseTotal)} licences</span>
-          </div>
-      </header>
-
-      ${
-        state.apiOnline
-          ? ""
-          : `<section class="notice notice--error">
-              <strong>${escapeHtml(state.apiError || "API indisponible")}</strong>
-              <span>Le frontend n'affiche plus de faux catalogue de démo. Il attend le backend FastAPI du projet calculator.</span>
-            </section>`
-      }
-
-      <section class="workspace">
-        <aside class="filters-panel" aria-label="Filtres catalogue">
-          <div class="panel-heading">
-            <p class="eyebrow">Catalogue</p>
-            <h2>Filtres</h2>
-          </div>
-          <div class="filter-group">
-            <h3>Familles</h3>
-            ${families.map((family) => sidebarButton(family, state.activeFamily === family.label, "data-family")).join("")}
-          </div>
-          <div class="filter-group">
-            <h3>Types</h3>
-            ${types.slice(0, 16).map((type) => sidebarButton(type, state.activeType === type.label, "data-type")).join("")}
-          </div>
-        </aside>
-
-        <section class="catalog-panel">
-          <div class="toolbar">
-            <label class="search-box">
-              <span>Recherche</span>
-              <input type="search" value="${escapeHtml(state.query)}" placeholder="SKU, produit, service, licence..." />
-            </label>
-            <div class="toolbar__summary">
-              <strong>${formatNumber(visibleProducts.length)}</strong>
-              <span>résultats affichés</span>
-            </div>
-          </div>
-
-          <div class="stats-strip">
-            <div>
-              <span>Source</span>
-              <strong>${state.apiOnline ? "API locale" : "Non connectée"}</strong>
-            </div>
-            <div>
-              <span>Produits chargés</span>
-              <strong>${formatNumber(state.catalogTotal || state.health?.catalog_items || 0)}</strong>
-            </div>
-            <div>
-              <span>Licences disponibles</span>
-              <strong>${formatNumber(state.health?.license_items || state.licenseTotal || 0)}</strong>
-            </div>
-            <div>
-              <span>Base API</span>
-              <strong>${escapeHtml(API_BASE)}</strong>
-            </div>
-            <div>
-              <span>Synchro QuoteFlow</span>
-              <strong>${escapeHtml(syncDelta)}</strong>
-            </div>
-          </div>
-
-          <div class="sync-bar">
-            <div>
-              <strong>${escapeHtml(syncLabel)}</strong>
-              <span>${escapeHtml(state.syncError || "Source locale QuoteFlow vers backend/data")}</span>
-            </div>
-            <button class="secondary-action" data-sync-catalog ${state.apiOnline && !state.syncing ? "" : "disabled"}>
-              ${state.syncing ? "Synchronisation..." : "Synchroniser"}
-            </button>
-          </div>
-
-          ${
-            state.loading
-              ? `<div class="empty-state">Chargement du catalogue...</div>`
-              : visibleProducts.length
-                ? `<div class="catalog-list">${visibleProducts.map(itemRow).join("")}</div>`
-                : `<div class="empty-state">${state.apiOnline ? "Aucun résultat pour ce filtre." : "Catalogue indisponible tant que l'API ne répond pas."}</div>`
-          }
-        </section>
-
-        <aside class="quote-panel" aria-label="Devis">
-          <div class="quote-panel__header">
-            <div>
-              <p class="eyebrow">Simulation · ${escapeHtml(quoteMode)}</p>
-              <h2>Panier</h2>
-            </div>
-            <span>${totals.rows.length} lignes</span>
-          </div>
-
-          <div class="quote-controls">
-            <label>
-              <span>Période</span>
-              <select data-period>
-                ${[1, 12, 24, 36]
-                  .map(
-                    (period) => `
-                      <option value="${period}" ${period === state.period ? "selected" : ""}>
-                        ${period} mois
-                      </option>
-                    `,
-                  )
-                  .join("")}
-              </select>
-            </label>
-            <label>
-              <span>Remise commerciale (en plus)</span>
-              <input type="range" min="0" max="40" step="1" value="${state.discount}" data-discount />
-              <strong>${state.discount}%</strong>
-            </label>
-          </div>
-
-          <ul class="cart-list">
-            ${totals.rows.length ? totals.rows.map(cartLine).join("") : `<li class="empty-cart">Sélectionnez une ligne catalogue pour commencer.</li>`}
-          </ul>
-
-          <div class="summary">
-            <div>
-              <span>Mensuel public</span>
-              <strong>${formatMoney(totals.publicMonthly)}</strong>
-            </div>
-            <div>
-              <span>Mensuel remisé</span>
-              <strong>${formatMoney(totals.monthly)}</strong>
-            </div>
-            <div>
-              <span>Projection ${state.period} mois</span>
-              <strong>${formatMoney(totals.periodTotal)}</strong>
-            </div>
-            ${
-              totals.engagementTotal != null
-                ? `<div>
-              <span>Total sur engagement</span>
-              <strong>${formatMoney(totals.engagementTotal)}</strong>
-            </div>`
-                : ""
-            }
-            <div>
-              <span>Économie estimée</span>
-              <strong>${formatMoney(totals.savings)}</strong>
-            </div>
-          </div>
-
-          <button class="primary-action" data-quote-refresh ${state.cart.length ? "" : "disabled"}>Recalculer</button>
-        </aside>
-      </section>
-    </main>
-  `;
-
-  app.querySelector(".search-box input").addEventListener("input", (event) =>
-    setQuery(event.target.value),
-  );
-
-  app.querySelectorAll("[data-family]").forEach((button) => {
-    button.addEventListener("click", () => setFamily(button.dataset.family));
-  });
-
-  app.querySelectorAll("[data-type]").forEach((button) => {
-    button.addEventListener("click", () => setType(button.dataset.type));
-  });
-
-  app.querySelectorAll("[data-add]").forEach((button) => {
-    button.addEventListener("click", () =>
-      addToCart(button.dataset.add, button.dataset.source || "auto"),
-    );
-  });
-
-  app.querySelectorAll("[data-remove]").forEach((button) => {
-    button.addEventListener("click", () => removeFromCart(button.dataset.remove));
-  });
-
-  app.querySelectorAll("[data-quantity]").forEach((input) => {
-    input.addEventListener("change", () =>
-      updateQuantity(input.dataset.quantity, input.value),
-    );
-  });
-
-  app.querySelector("[data-period]").addEventListener("change", (event) =>
-    setPeriod(event.target.value),
-  );
-
-  app.querySelector("[data-discount]").addEventListener("input", (event) =>
-    setDiscount(event.target.value),
-  );
-
-  app.querySelector("[data-quote-refresh]").addEventListener("click", () =>
-    calculateRemoteQuote(),
-  );
-
-  app.querySelector("[data-sync-catalog]").addEventListener("click", () =>
-    runCatalogSync(),
-  );
-
-  if (restoreSearch) {
-    const searchInput = app.querySelector(".search-box input");
-    searchInput.focus();
-    searchInput.setSelectionRange(searchSelection, searchSelection);
+  if (el.id === "q-global") {
+    state.search = el.value;
+    // Recherche unifiée : un seul champ pilote le catalogue ET les licences.
+    state.lic.query = el.value;
+    state.lic.page = 1;
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(renderCatalog, 130);
+    return;
   }
-};
 
+  if (el.id === "lic-q") {
+    state.lic.query = el.value;
+    state.lic.page = 1;
+    window.clearTimeout(licTimer);
+    licTimer = window.setTimeout(renderLicenseResults, 130);
+    return;
+  }
+
+  if (el.id === "discount-range" || el.id === "discount-num") {
+    let v = clamp(Number(el.value), 0, 100);
+    state.discount = v;
+    persistQuotes();
+    const range = document.querySelector("#discount-range");
+    const numInput = document.querySelector("#discount-num");
+    const valEl = document.querySelector("#discount-val");
+    if (range && el.id !== "discount-range") range.value = clamp(v, 0, 60);
+    if (numInput && el.id !== "discount-num") numInput.value = v;
+    if (valEl) valEl.textContent = `${num(v)} %`;
+    scheduleQuote();
+    return;
+  }
+
+  if (el.id === "project") {
+    state.projectName = el.value;
+    persistQuotes();
+    renderQuoteControls();
+    return;
+  }
+}
+
+function onChange(e) {
+  const el = e.target;
+
+  if (el.id === "period-select") {
+    state.period = Number(el.value) || 12;
+    persistQuotes();
+    scheduleQuote();
+    renderQuoteControls();
+    renderSummaryTotals();
+    return;
+  }
+
+  if (el.id === "lic-vendor") {
+    state.lic.vendor = el.value;
+    state.lic.page = 1;
+    renderLicenseResults();
+    return;
+  }
+  if (el.id === "lic-term") {
+    state.lic.term = el.value;
+    state.lic.page = 1;
+    renderLicenseResults();
+    return;
+  }
+
+  if (el.dataset.qtyEdit) {
+    const { sku, source } = el.dataset;
+    const line = findLine(sku, source);
+    if (!line) return;
+    let v = Math.round(Number(el.value));
+    if (!Number.isFinite(v) || v < (line.minQty || 1)) v = line.minQty || 1;
+    line.quantity = v;
+    persistCart();
+    afterCartChange(source);
+    return;
+  }
+}
+
+/* ---------- Boot ---------- */
+mount();
 render();
-loadInitialData();
+loadAll();

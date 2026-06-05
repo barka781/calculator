@@ -16,6 +16,28 @@ def data_root() -> Path:
     return project_root() / "data"
 
 
+def database_url() -> str:
+    """URL SQLAlchemy de la base PostgreSQL.
+
+    Surchargée par la variable d'environnement DATABASE_URL.
+    Défaut : le Postgres local lancé via docker-compose.yml.
+    """
+    return os.getenv(
+        "DATABASE_URL",
+        "postgresql+psycopg2://calculator:calculator@localhost:5432/calculator",
+    )
+
+
+def data_source() -> str:
+    """Source de lecture du catalogue : 'db' (PostgreSQL) ou 'yaml'.
+
+    Défaut 'db'. En mode 'db', les loaders se replient automatiquement sur
+    les YAML si la base est injoignable ou vide (résilience).
+    Non mémorisée pour rester surchargée à chaud (tests).
+    """
+    return os.getenv("CALCULATOR_SOURCE", "db").strip().lower()
+
+
 def catalogs_dir() -> Path:
     return data_root() / "CATALOGS"
 

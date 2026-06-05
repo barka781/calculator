@@ -25,6 +25,9 @@ def calculate_architecture(request: ArchitectureRequest) -> dict[str, Any]:
 
     block_storage_gb = (total_storage_gb + ram_required_gb) * 1.1
     backup_storage_gb = block_storage_gb * 2
+    # Le SKU backup (csp:fr1:iaas:storage:backup:v1) est facturé en Tio, pas en Go.
+    # QuoteFlow envoie ici une quantité en Go vers un prix au Tio (bug ×1024) ; on convertit.
+    backup_storage_tio = backup_storage_gb / 1024
 
     services_to_add = [
         {
@@ -35,13 +38,13 @@ def calculate_architecture(request: ArchitectureRequest) -> dict[str, Any]:
         {
             "sku": "csp:fr1:iaas:storage:bloc:medium:v1",
             "quantity": round(block_storage_gb),
-            "unit": "Go",
+            "unit": "Gio",
             "description": "Stockage bloc pour VMs",
         },
         {
             "sku": "csp:fr1:iaas:storage:backup:v1",
-            "quantity": round(backup_storage_gb),
-            "unit": "Go",
+            "quantity": round(backup_storage_tio, 2),
+            "unit": "Tio",
             "description": "Stockage pour sauvegardes",
         },
     ]

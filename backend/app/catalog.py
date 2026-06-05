@@ -3,11 +3,15 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional, Tuple
+import logging
 import re
 
 import yaml
 
-from .config import catalogs_dir
+from .config import catalogs_dir, data_source
+
+
+logger = logging.getLogger(__name__)
 
 
 STOPWORDS_FR = {
@@ -61,8 +65,8 @@ def _extract_items(data: dict[str, Any]) -> list[dict[str, Any]]:
     return raw if isinstance(raw, list) else []
 
 
-def _sub_type(product: dict[str, Any]) -> str:
-    raw = str(product.get("type") or "general").strip()
+def _sub_type(raw_type: Any) -> str:
+    raw = str(raw_type or "general").strip()
     aliases = {
         "vmware": "VMware",
         "openiaas": "OpenIaaS",
@@ -97,8 +101,11 @@ def enrich_pricing(item: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-@lru_cache(maxsize=1)
-def load_catalog_items() -> list[dict[str, Any]]:
+def _sort_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(items, key=lambda item: (item["category"], item["type"], item["name"].lower()))
+
+
+def _load_items_from_yaml() -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     root = catalogs_dir()
 
@@ -124,7 +131,7 @@ def load_catalog_items() -> list[dict[str, Any]]:
                     "description": product.get("description"),
                     "category": category,
                     "type": type_name,
-                    "sub_type": _sub_type(product),
+                    "sub_type": _sub_type(product.get("type")),
                     "unit": product.get("unit") or "unite",
                     "base_quantity": product.get("base_quantity"),
                     "pricing": product.get("pricing") or {},
@@ -135,7 +142,53 @@ def load_catalog_items() -> list[dict[str, Any]]:
                 }
                 items.append(enrich_pricing(item))
 
-    return sorted(items, key=lambda item: (item["category"], item["type"], item["name"].lower()))
+    return _sort_items(items)
+
+
+def _row_to_item(row: Any) -> dict[str, Any]:
+    """Reconstruit le dict produit au format identique au chargement YAML."""
+    stem = Path(row.source_file).stem if row.source_file else (row.type or "")
+    base_quantity = float(row.base_quantity) if row.base_quantity is not None else None
+    item = {
+        "sku": str(row.sku),
+        "name": str(row.name),
+        "title": str(row.name),
+        "description": row.description,
+        "category": str(row.category or row.catalog or "").title(),
+        "type": _title(stem),
+        "sub_type": _sub_type(row.type),
+        "unit": row.unit or "unite",
+        "base_quantity": base_quantity,
+        "pricing": row.pricing or {},
+        "specs": row.specs or {},
+        "metadata": row.item_metadata or {},
+        "status": row.status,
+        "source_file": row.source_file,
+    }
+    return enrich_pricing(item)
+
+
+def _load_items_from_db() -> list[dict[str, Any]]:
+    from sqlalchemy import select
+
+    from .db import SessionLocal
+    from .db_models import Product
+
+    with SessionLocal() as session:
+        rows = session.execute(select(Product)).scalars().all()
+    return _sort_items([_row_to_item(row) for row in rows])
+
+
+@lru_cache(maxsize=1)
+def load_catalog_items() -> list[dict[str, Any]]:
+    if data_source() != "db":
+        return _load_items_from_yaml()
+    try:
+        items = _load_items_from_db()
+    except Exception as exc:  # BDD injoignable -> repli résilient sur YAML
+        logger.warning("Lecture catalogue BDD impossible, repli YAML: %s", exc)
+        items = []
+    return items or _load_items_from_yaml()
 
 
 def find_catalog_item(sku: str) -> Optional[dict[str, Any]]:

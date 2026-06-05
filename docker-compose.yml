@@ -1,0 +1,24 @@
+# PostgreSQL local pour le Cloud Temple Calculator.
+# Démarrage : docker compose up -d
+# Connexion  : postgresql+psycopg2://calculator:calculator@localhost:5432/calculator
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: calculator-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: calculator
+      POSTGRES_PASSWORD: calculator
+      POSTGRES_DB: calculator
+    ports:
+      - "5432:5432"
+    volumes:
+      - calculator_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U calculator -d calculator"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  calculator_pgdata:

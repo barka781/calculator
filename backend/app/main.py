@@ -1,7 +1,9 @@
+import urllib.parse
 from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from .architecture import (
     build_service_appliance_offer,
@@ -9,9 +11,16 @@ from .architecture import (
     calculate_managed_service_offer,
 )
 from .catalog import find_catalog_item, load_catalog_items, search_catalog
-from .config import catalogs_dir, licences_file, source_catalogs_dir, source_licences_dir
+from .config import (
+    catalogs_dir,
+    data_source,
+    licences_file,
+    source_catalogs_dir,
+    source_licences_dir,
+)
+from .export import render_quote
 from .licenses import find_license_item, load_license_items, search_licenses
-from .models import ArchitectureRequest, QuoteRequest, QuoteResponse
+from .models import ArchitectureRequest, ExportQuoteRequest, QuoteRequest, QuoteResponse
 from .quote import calculate_quote
 from .sync import sync_catalog as run_sync_catalog
 from .sync import sync_summary
@@ -21,7 +30,7 @@ from .sync import sync_status
 app = FastAPI(
     title="Cloud Temple Calculator API",
     version="0.1.0",
-    description="API publique du calculateur Cloud Temple, extraite de QuoteFlow sans DB ni services externes.",
+    description="API publique du calculateur Cloud Temple, adossée à PostgreSQL (repli YAML si BDD indisponible).",
 )
 
 app.add_middleware(
@@ -40,6 +49,7 @@ def health() -> dict[str, Any]:
     sync = sync_summary()
     return {
         "status": "ok",
+        "data_source": data_source(),
         "catalog_items": catalog_count,
         "license_items": license_count,
         "catalogs_dir": str(catalogs_dir()),
@@ -50,6 +60,8 @@ def health() -> dict[str, Any]:
             "is_synchronized": sync.get("is_synchronized"),
             "needs_sync": sync.get("needs_sync"),
             "source_available": sync.get("source_available"),
+            "source": sync.get("source"),
+            "last_sync": sync.get("last_sync"),
             "delta": sync.get("delta"),
             "status_endpoint": sync.get("status_endpoint"),
         },
@@ -121,6 +133,31 @@ def get_license_item(sku: str) -> dict[str, Any]:
 @app.post("/api/quote", response_model=QuoteResponse)
 def quote(request: QuoteRequest) -> QuoteResponse:
     return calculate_quote(request)
+
+
+@app.post("/api/quote/export")
+def export_quote(
+    request: ExportQuoteRequest,
+    format: str = Query(default="xlsx", pattern="^(xlsx|pdf|html)$"),
+) -> StreamingResponse:
+    if not request.lines:
+        raise HTTPException(status_code=422, detail="Le devis est vide : aucune ligne à exporter.")
+    quote = calculate_quote(request)
+    meta = {"project": request.project, "date": request.date}
+    try:
+        content, content_type, ext = render_quote(quote, format, meta)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    base = (request.project or "devis-cloud-temple").strip() or "devis-cloud-temple"
+    safe = "".join(c if c.isalnum() or c in "-_ " else "-" for c in base).strip().replace(" ", "-")
+    filename = f"{safe or 'devis'}.{ext}"
+    disposition = f"attachment; filename=\"{filename}\"; filename*=UTF-8''{urllib.parse.quote(filename)}"
+    return StreamingResponse(
+        iter([content]),
+        media_type=content_type,
+        headers={"Content-Disposition": disposition},
+    )
 
 
 @app.post("/api/architecture/calculate")

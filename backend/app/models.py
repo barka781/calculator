@@ -45,6 +45,13 @@ class QuoteRequest(BaseModel):
     discount_percent: float = Field(default=0, ge=0, le=100)
 
 
+class ExportQuoteRequest(QuoteRequest):
+    """Devis à exporter : mêmes champs que QuoteRequest + métadonnées de présentation."""
+
+    project: Optional[str] = None
+    date: Optional[str] = None
+
+
 class QuoteLineResponse(BaseModel):
     sku: str
     name: str
