@@ -1098,6 +1098,32 @@ function renderSummaryLines() {
       if (state.discount > 0) meta.push(`<span class="cl-chip cl-chip--com">−${num(state.discount)}% commerciale</span>`);
       if (ql && ql.engagement_months > 1) meta.push(`<span class="cl-chip cl-chip--eng">engagement ${num(ql.engagement_months)} mois</span>`);
       const engTot = ql && ql.engagement_total ? ql.engagement_total : null;
+      // Détail exhaustif par ligne (tous les champs fournis par l'API).
+      let details = "";
+      if (ql) {
+        const pub = ql.public_unit_price;
+        const std = ql.standard_discount_percent || 0;
+        const com = state.discount || 0;
+        const afterStd = pub * (1 - std / 100);
+        const monthlySaving = publicMonthly !== null && monthly !== null ? publicMonthly - monthly : 0;
+        const row = (lbl, val, cls = "") =>
+          `<div class="cld-row ${cls}"><span class="cld-lbl">${esc(lbl)}</span><span class="cld-val">${val}</span></div>`;
+        const rows = [];
+        rows.push(row("Prix public unitaire", `${esc(money(pub))} <small>/ ${esc(unit)}</small>`));
+        if (std > 0) {
+          rows.push(row("Remise catalogue", `<span class="cld-neg">−${num(std)} %</span>`));
+          rows.push(row("Après remise catalogue", `${esc(money(afterStd))} <small>/ ${esc(unit)}</small>`));
+        }
+        if (com > 0) rows.push(row("Remise commerciale", `<span class="cld-neg">−${num(com)} %</span>`));
+        rows.push(row("PU remisé", `${esc(money(unitPrice))} <small>/ ${esc(unit)}</small>`, "cld-row--accent"));
+        rows.push(row("Quantité", `× ${num(l.quantity)}`));
+        if (publicMonthly !== null) rows.push(row("Mensuel public", esc(money(publicMonthly))));
+        if (monthly !== null) rows.push(row("Mensuel remisé", `${esc(money(monthly))} <small>/mois</small>`, "cld-row--strong"));
+        if (monthlySaving > 0.005) rows.push(row("Économie / mois", `<span class="cld-save">−${esc(money(monthlySaving))}</span>`));
+        if (ql.engagement_months > 1) rows.push(row("Engagement", `${num(ql.engagement_months)} mois`));
+        if (engTot !== null) rows.push(row("Total sur l'engagement", esc(money(engTot)), "cld-row--strong"));
+        details = `<div class="cart-line__details">${rows.join("")}</div>`;
+      }
       return `
         <div class="cart-line">
           <div>
@@ -1114,6 +1140,7 @@ function renderSummaryLines() {
             ${stepper(l.sku, l.source, l.quantity)}
             <button class="btn btn--danger-ghost btn--sm cart-line__remove" data-remove="${esc(l.sku)}" data-source="${l.source}">${I.trash} Retirer</button>
           </div>
+          ${details}
         </div>`;
     })
     .join("");

@@ -185,7 +185,19 @@ const main = async () => {
   spawnService(
     "backend",
     uvicornBin,
-    ["app.main:app", "--reload", "--host", host, "--port", String(backendPort)],
+    [
+      "app.main:app",
+      "--reload",
+      // Ne surveiller que le code applicatif. Sans cela, WatchFiles scrute
+      // aussi .venv/ (des milliers de fichiers) et part en boucle de reload
+      // infinie quand leurs mtimes changent (ex: copie du workspace).
+      "--reload-dir",
+      "app",
+      "--host",
+      host,
+      "--port",
+      String(backendPort),
+    ],
     backendDir,
   );
 
