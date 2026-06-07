@@ -182,24 +182,20 @@ const main = async () => {
   await killPort(backendPort);
   await killPort(frontendPort);
 
-  spawnService(
-    "backend",
-    uvicornBin,
-    [
-      "app.main:app",
-      "--reload",
-      // Ne surveiller que le code applicatif. Sans cela, WatchFiles scrute
-      // aussi .venv/ (des milliers de fichiers) et part en boucle de reload
-      // infinie quand leurs mtimes changent (ex: copie du workspace).
-      "--reload-dir",
-      "app",
-      "--host",
-      host,
-      "--port",
-      String(backendPort),
-    ],
-    backendDir,
-  );
+  // Auto-reload OPT-IN seulement (WATCH=1). Désactivé par défaut car, dans un
+  // dossier synchronisé cloud (iCloud Drive), la re-matérialisation permanente
+  // des fichiers fait boucler WatchFiles à l'infini → backend qui meurt en
+  // cascade. --reload-dir app limite la surveillance au code applicatif quand
+  // le reload est activé hors d'un tel dossier.
+  const backendArgs = ["app.main:app", "--host", host, "--port", String(backendPort)];
+  if (process.env.WATCH === "1") {
+    backendArgs.splice(1, 0, "--reload", "--reload-dir", "app");
+    log("dev", "auto-reload activé (WATCH=1)");
+  } else {
+    log("dev", "auto-reload désactivé (stable). WATCH=1 pour l'activer.");
+  }
+
+  spawnService("backend", uvicornBin, backendArgs, backendDir);
 
   spawnService(
     "frontend",
