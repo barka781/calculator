@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -16,6 +17,10 @@ from .config import (
     catalogs_dir,
     data_root,
     licences_file,
+    live_git_cache_dir,
+    live_git_enabled,
+    live_git_ref,
+    live_git_url,
     quoteflow_root,
     source_catalogs_dir,
     source_licences_dir,
@@ -26,6 +31,7 @@ from .licenses import load_license_items
 RUNTIME_EXTENSIONS = {".json", ".md", ".yaml", ".yml"}
 IGNORED_DIRS = {"SOURCE", "TRAIN", "__pycache__"}
 SYNC_MANIFEST_NAME = "_sync_manifest.json"
+GIT_TIMEOUT_SECONDS = 120
 
 
 @dataclass(frozen=True)
@@ -80,8 +86,33 @@ def _run_git(root: Path, args: list[str]) -> tuple[str | None, str | None]:
     return stdout, None
 
 
-def _source_git_metadata() -> dict[str, Any]:
-    root = quoteflow_root()
+def _redact_url(url: str | None) -> str | None:
+    if not url:
+        return url
+    return re.sub(r"(?P<scheme>https?://)(?P<creds>[^/@]+)@", r"\g<scheme>[redacted]@", url)
+
+
+def _run_git_checked(root: Path | None, args: list[str], timeout: int = GIT_TIMEOUT_SECONDS) -> str:
+    command = ["git", *args]
+    try:
+        result = subprocess.run(
+            command,
+            cwd=str(root) if root else None,
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(str(exc)) from exc
+
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or f"git exited with {result.returncode}"
+        raise RuntimeError(detail)
+    return result.stdout.strip()
+
+
+def _git_metadata(root: Path) -> dict[str, Any]:
     metadata: dict[str, Any] = {
         "available": False,
         "root": str(root),
@@ -109,7 +140,7 @@ def _source_git_metadata() -> dict[str, Any]:
             "commit": commit,
             "commit_full": commit_full,
             "commit_date": commit_date,
-            "remote": remote,
+            "remote": _redact_url(remote),
             "dirty": bool(status),
             "dirty_count": len(status.splitlines()) if status else 0,
         }
@@ -119,13 +150,85 @@ def _source_git_metadata() -> dict[str, Any]:
     return metadata
 
 
+def _source_git_metadata() -> dict[str, Any]:
+    return _git_metadata(quoteflow_root())
+
+
+def _live_git_metadata() -> dict[str, Any]:
+    url = live_git_url()
+    root = live_git_cache_dir()
+    metadata = {
+        "available": False,
+        "url": _redact_url(url),
+        "ref": live_git_ref(),
+        "cache_dir": str(root),
+    }
+    if not url:
+        metadata["error"] = "CALCULATOR_LIVE_GIT_URL is not configured"
+        return metadata
+    if not root.exists():
+        metadata["error"] = "cache does not exist yet"
+        return metadata
+    metadata.update(_git_metadata(root))
+    return metadata
+
+
 def _source_metadata() -> dict[str, Any]:
+    if live_git_enabled():
+        return {
+            "kind": "live_git",
+            "catalogs_dir": str(source_catalogs_dir()),
+            "licences_dir": str(source_licences_dir()),
+            "git": _live_git_metadata(),
+        }
     return {
         "kind": "local_quoteflow",
         "quoteflow_root": str(quoteflow_root()),
         "catalogs_dir": str(source_catalogs_dir()),
         "licences_dir": str(source_licences_dir()),
         "git": _source_git_metadata(),
+    }
+
+
+def refresh_live_source() -> dict[str, Any]:
+    url = live_git_url()
+    if not url:
+        return {
+            "status": "skipped",
+            "kind": "local_quoteflow",
+            "reason": "CALCULATOR_LIVE_GIT_URL is not configured",
+        }
+
+    ref = live_git_ref()
+    cache_dir = live_git_cache_dir()
+    action = "fetch"
+
+    if cache_dir.exists() and not (cache_dir / ".git").exists():
+        raise RuntimeError(f"Live git cache exists but is not a git repository: {cache_dir}")
+
+    if not cache_dir.exists():
+        cache_dir.parent.mkdir(parents=True, exist_ok=True)
+        _run_git_checked(
+            None,
+            ["clone", "--depth", "1", "--branch", ref, url, str(cache_dir)],
+            timeout=GIT_TIMEOUT_SECONDS * 3,
+        )
+        action = "clone"
+    else:
+        remote, _ = _run_git(cache_dir, ["config", "--get", "remote.origin.url"])
+        if remote != url:
+            _run_git_checked(cache_dir, ["remote", "set-url", "origin", url])
+        _run_git_checked(cache_dir, ["fetch", "--depth", "1", "origin", ref], timeout=GIT_TIMEOUT_SECONDS * 3)
+        _run_git_checked(cache_dir, ["checkout", "--detach", "FETCH_HEAD"])
+
+    return {
+        "status": "success",
+        "kind": "live_git",
+        "action": action,
+        "url": _redact_url(url),
+        "ref": ref,
+        "cache_dir": str(cache_dir),
+        "git": _live_git_metadata(),
     }
 
 
@@ -301,7 +404,7 @@ def _write_last_sync_manifest(
     manifest = _manifest(source_files)
     payload = {
         "status": "success",
-        "kind": "local_quoteflow",
+        "kind": source.get("kind") or "local_quoteflow",
         "synced_at": _utc_now(),
         "file_count": len(source_files),
         "source_checksum": _aggregate_checksum(manifest, "source_checksum"),
@@ -401,7 +504,8 @@ def sync_summary() -> dict[str, Any]:
     }
 
 
-def sync_catalog() -> dict[str, Any]:
+def sync_catalog(refresh: bool = True) -> dict[str, Any]:
+    refresh_result = refresh_live_source() if refresh else {"status": "skipped", "reason": "refresh disabled"}
     validation = {"catalogs": _validate_catalogs(), "licences": _validate_licences()}
     before = sync_status()
     source_files = _runtime_files()
@@ -426,6 +530,7 @@ def sync_catalog() -> dict[str, Any]:
     return {
         "status": "success",
         "message": "Catalogue et licences synchronises depuis QuoteFlow.",
+        "refresh": refresh_result,
         "validation": validation,
         "before": before,
         "after": after,

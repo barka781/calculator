@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from functools import lru_cache
 from pathlib import Path
 import os
@@ -38,6 +40,27 @@ def data_source() -> str:
     return os.getenv("CALCULATOR_SOURCE", "db").strip().lower()
 
 
+def live_git_url() -> str | None:
+    value = os.getenv("CALCULATOR_LIVE_GIT_URL")
+    return value.strip() if value and value.strip() else None
+
+
+def live_git_ref() -> str:
+    return os.getenv("CALCULATOR_LIVE_GIT_REF", "main").strip() or "main"
+
+
+@lru_cache(maxsize=1)
+def live_git_cache_dir() -> Path:
+    configured = os.getenv("CALCULATOR_LIVE_GIT_CACHE_DIR")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return data_root() / "_live_quoteflow"
+
+
+def live_git_enabled() -> bool:
+    return live_git_url() is not None
+
+
 def catalogs_dir() -> Path:
     return data_root() / "CATALOGS"
 
@@ -54,15 +77,21 @@ def quoteflow_root() -> Path:
     return project_root().parents[1] / "quoteflow"
 
 
+def source_root() -> Path:
+    if live_git_enabled():
+        return live_git_cache_dir()
+    return quoteflow_root()
+
+
 def source_catalogs_dir() -> Path:
     configured = os.getenv("CALCULATOR_SOURCE_CATALOGS_DIR")
     if configured:
         return Path(configured).expanduser().resolve()
-    return quoteflow_root() / "CATALOGS"
+    return source_root() / "CATALOGS"
 
 
 def source_licences_dir() -> Path:
     configured = os.getenv("CALCULATOR_SOURCE_LICENCES_DIR")
     if configured:
         return Path(configured).expanduser().resolve()
-    return quoteflow_root() / "LICENCES"
+    return source_root() / "LICENCES"

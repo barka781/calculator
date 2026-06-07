@@ -1,4 +1,5 @@
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,7 @@ def _write(path: Path, content: str) -> None:
 def _reset_caches() -> None:
     config.data_root.cache_clear()
     config.quoteflow_root.cache_clear()
+    config.live_git_cache_dir.cache_clear()
     load_catalog_items.cache_clear()
     load_license_items.cache_clear()
 
@@ -30,6 +32,9 @@ def reset_caches_around_test():
         "CALCULATOR_SOURCE_CATALOGS_DIR": os.environ.get("CALCULATOR_SOURCE_CATALOGS_DIR"),
         "CALCULATOR_SOURCE_LICENCES_DIR": os.environ.get("CALCULATOR_SOURCE_LICENCES_DIR"),
         "CALCULATOR_SOURCE": os.environ.get("CALCULATOR_SOURCE"),
+        "CALCULATOR_LIVE_GIT_URL": os.environ.get("CALCULATOR_LIVE_GIT_URL"),
+        "CALCULATOR_LIVE_GIT_REF": os.environ.get("CALCULATOR_LIVE_GIT_REF"),
+        "CALCULATOR_LIVE_GIT_CACHE_DIR": os.environ.get("CALCULATOR_LIVE_GIT_CACHE_DIR"),
     }
     # La synchro porte sur les fichiers YAML : on épingle la source en lecture
     # sur YAML pour que les comptages reflètent le répertoire de données synchronisé.
@@ -125,3 +130,82 @@ items:
     assert changed["needs_sync"] is True
     assert changed["delta"]["modified"] == ["CATALOGS/cloud/compute.yaml"]
     assert changed["delta"]["removed"] == ["LICENCES/obsolete.md"]
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True)
+
+
+def _git_commit(repo: Path, message: str) -> None:
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.email=test@example.invalid",
+            "-c",
+            "user.name=Test",
+            "commit",
+            "-m",
+            message,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_live_git_sync_uses_managed_cache(tmp_path, monkeypatch):
+    repo = tmp_path / "quoteflow-repo"
+    target = tmp_path / "calculator-data"
+    cache = tmp_path / "live-cache"
+
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init", "-b", "main"], check=True, capture_output=True, text=True)
+    _write(
+        repo / "CATALOGS/cloud/compute.yaml",
+        """
+metadata:
+  category: cloud
+items:
+  - sku: csp:test:live:v1
+    name: Live Compute
+    unit: Lame
+    pricing:
+      public_price: 99
+""",
+    )
+    _write(
+        repo / "LICENCES/licences.yaml",
+        """
+items:
+  - sku: LIVE-LIC-001
+    name: Live Licence
+    vendor: Test
+    unit: Licence
+    pricing:
+      public_price: 12
+""",
+    )
+    _git(repo, "add", "CATALOGS", "LICENCES")
+    _git_commit(repo, "initial live data")
+
+    monkeypatch.setenv("CALCULATOR_DATA_DIR", str(target))
+    monkeypatch.setenv("CALCULATOR_LIVE_GIT_URL", str(repo))
+    monkeypatch.setenv("CALCULATOR_LIVE_GIT_REF", "main")
+    monkeypatch.setenv("CALCULATOR_LIVE_GIT_CACHE_DIR", str(cache))
+    _reset_caches()
+
+    result = sync_catalog()
+
+    assert result["status"] == "success"
+    assert result["refresh"]["status"] == "success"
+    assert result["refresh"]["action"] == "clone"
+    assert result["last_sync"]["kind"] == "live_git"
+    assert result["last_sync"]["source"]["kind"] == "live_git"
+    assert result["catalog_items"] == 1
+    assert result["license_items"] == 1
+    assert (cache / ".git").exists()
+    assert (target / "CATALOGS/cloud/compute.yaml").exists()
+    assert (target / "LICENCES/licences.yaml").exists()

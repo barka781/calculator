@@ -44,6 +44,19 @@ locale, sans base de données :
 Les dossiers licences `SOURCE/` et `TRAIN/` sont ignores : ils contiennent les
 sources brutes et supports de formation, pas les fichiers runtime de l'API.
 
+### Sync vivante via Git
+
+Pour éviter de modifier le checkout QuoteFlow local, la sync vivante peut lire
+un dépôt Git dédié dans un cache contrôlé par le calculateur :
+
+- `CALCULATOR_LIVE_GIT_URL` : URL du dépôt source contenant `CATALOGS/` et `LICENCES/`.
+- `CALCULATOR_LIVE_GIT_REF` : branche, tag ou ref à suivre (`main` par défaut).
+- `CALCULATOR_LIVE_GIT_CACHE_DIR` : cache local du clone live (`data/_live_quoteflow` par défaut).
+
+Quand `CALCULATOR_LIVE_GIT_URL` est défini, `POST /api/sync/catalog` rafraîchit
+ce cache avant de valider et copier les YAML vers `backend/data`. Le paramètre
+`refresh=false` permet de recopier depuis le cache sans appel Git.
+
 ## État de l'extraction
 
 Le périmètre fiable du MVP est le flux catalogue + licences + panier/devis.

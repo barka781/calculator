@@ -74,9 +74,11 @@ def get_sync_status() -> dict[str, Any]:
 
 
 @app.post("/api/sync/catalog")
-def post_sync_catalog() -> dict[str, Any]:
+def post_sync_catalog(
+    refresh: bool = Query(default=True, description="Rafraichit la source live configuree avant copie."),
+) -> dict[str, Any]:
     try:
-        return run_sync_catalog()
+        return run_sync_catalog(refresh=refresh)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

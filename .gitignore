@@ -7,5 +7,6 @@ node_modules/
 dist/
 backend/data/LICENCES/SOURCE/
 backend/data/LICENCES/TRAIN/
+backend/data/_live_quoteflow/
 .clinerules/
 memory-bank/
