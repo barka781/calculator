@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
-from shutil import copy2
+from shutil import copy2, rmtree
 from typing import Any
 
 import yaml
@@ -201,25 +201,47 @@ def refresh_live_source() -> dict[str, Any]:
 
     ref = live_git_ref()
     cache_dir = live_git_cache_dir()
-    action = "fetch"
+    cache_ready = cache_dir.exists() and (cache_dir / ".git").exists()
 
-    if cache_dir.exists() and not (cache_dir / ".git").exists():
+    if cache_dir.exists() and not cache_ready:
         raise RuntimeError(f"Live git cache exists but is not a git repository: {cache_dir}")
 
-    if not cache_dir.exists():
-        cache_dir.parent.mkdir(parents=True, exist_ok=True)
-        _run_git_checked(
-            None,
-            ["clone", "--depth", "1", "--branch", ref, url, str(cache_dir)],
-            timeout=GIT_TIMEOUT_SECONDS * 3,
-        )
-        action = "clone"
-    else:
-        remote, _ = _run_git(cache_dir, ["config", "--get", "remote.origin.url"])
-        if remote != url:
-            _run_git_checked(cache_dir, ["remote", "set-url", "origin", url])
-        _run_git_checked(cache_dir, ["fetch", "--depth", "1", "origin", ref], timeout=GIT_TIMEOUT_SECONDS * 3)
-        _run_git_checked(cache_dir, ["checkout", "--detach", "FETCH_HEAD"])
+    action = "clone" if not cache_ready else "fetch"
+
+    try:
+        if not cache_ready:
+            cache_dir.parent.mkdir(parents=True, exist_ok=True)
+            _run_git_checked(
+                None,
+                ["clone", "--depth", "1", "--branch", ref, url, str(cache_dir)],
+                timeout=GIT_TIMEOUT_SECONDS * 3,
+            )
+        else:
+            remote, _ = _run_git(cache_dir, ["config", "--get", "remote.origin.url"])
+            if remote != url:
+                _run_git_checked(cache_dir, ["remote", "set-url", "origin", url])
+            _run_git_checked(cache_dir, ["fetch", "--depth", "1", "origin", ref], timeout=GIT_TIMEOUT_SECONDS * 3)
+            _run_git_checked(cache_dir, ["checkout", "--detach", "FETCH_HEAD"])
+    except RuntimeError as exc:
+        # Tolérance de panne : si un cache exploitable existe déjà, on conserve les
+        # données précédentes et on signale l'échec (statut « stale ») plutôt que de
+        # casser toute la synchronisation — la disponibilité prime (contexte ANSSI).
+        if cache_ready:
+            return {
+                "status": "stale",
+                "kind": "live_git",
+                "action": action,
+                "url": _redact_url(url),
+                "ref": ref,
+                "cache_dir": str(cache_dir),
+                "error": str(exc),
+                "git": _live_git_metadata(),
+            }
+        # Premier clone en échec : aucune donnée à servir. On nettoie le résidu
+        # partiel éventuel (sinon il bloquerait un futur clone) et on propage.
+        if cache_dir.exists():
+            rmtree(cache_dir, ignore_errors=True)
+        raise
 
     return {
         "status": "success",

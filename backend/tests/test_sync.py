@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -8,7 +9,7 @@ from app import config
 from app.catalog import load_catalog_items
 from app.licenses import load_license_items
 from app.main import get_sync_status
-from app.sync import sync_catalog, sync_status
+from app.sync import _redact_url, sync_catalog, sync_status
 
 
 def _write(path: Path, content: str) -> None:
@@ -209,3 +210,106 @@ items:
     assert (cache / ".git").exists()
     assert (target / "CATALOGS/cloud/compute.yaml").exists()
     assert (target / "LICENCES/licences.yaml").exists()
+
+
+def _compute_yaml(price: int) -> str:
+    return f"""
+metadata:
+  category: cloud
+items:
+  - sku: csp:test:live:v1
+    name: Live Compute
+    unit: Lame
+    pricing:
+      public_price: {price}
+"""
+
+
+def _seed_live_repo(repo: Path) -> None:
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init", "-b", "main"], check=True, capture_output=True, text=True)
+    _write(repo / "CATALOGS/cloud/compute.yaml", _compute_yaml(99))
+    _write(
+        repo / "LICENCES/licences.yaml",
+        """
+items:
+  - sku: LIVE-LIC-001
+    name: Live Licence
+    vendor: Test
+    unit: Licence
+    pricing:
+      public_price: 12
+""",
+    )
+    _git(repo, "add", "CATALOGS", "LICENCES")
+    _git_commit(repo, "initial live data")
+
+
+def test_live_git_refresh_is_incremental(tmp_path, monkeypatch):
+    """Un 2e commit sur la source live est récupéré via fetch (pas re-clone)."""
+    repo = tmp_path / "quoteflow-repo"
+    target = tmp_path / "calculator-data"
+    cache = tmp_path / "live-cache"
+    _seed_live_repo(repo)
+
+    monkeypatch.setenv("CALCULATOR_DATA_DIR", str(target))
+    monkeypatch.setenv("CALCULATOR_LIVE_GIT_URL", str(repo))
+    monkeypatch.setenv("CALCULATOR_LIVE_GIT_REF", "main")
+    monkeypatch.setenv("CALCULATOR_LIVE_GIT_CACHE_DIR", str(cache))
+    _reset_caches()
+
+    first = sync_catalog()
+    assert first["refresh"]["action"] == "clone"
+    assert "99" in (target / "CATALOGS/cloud/compute.yaml").read_text(encoding="utf-8")
+
+    # Nouvelle version du catalogue côté source.
+    _write(repo / "CATALOGS/cloud/compute.yaml", _compute_yaml(111))
+    _git(repo, "add", "CATALOGS")
+    _git_commit(repo, "bump compute price")
+
+    second = sync_catalog()
+    assert second["status"] == "success"
+    assert second["refresh"]["status"] == "success"
+    assert second["refresh"]["action"] == "fetch"
+    assert second["catalog_items"] == 1
+    assert "111" in (target / "CATALOGS/cloud/compute.yaml").read_text(encoding="utf-8")
+
+
+def test_live_git_refresh_failure_keeps_cache(tmp_path, monkeypatch):
+    """Si la source live devient injoignable, on garde le cache (statut stale, pas d'exception)."""
+    repo = tmp_path / "quoteflow-repo"
+    target = tmp_path / "calculator-data"
+    cache = tmp_path / "live-cache"
+    _seed_live_repo(repo)
+
+    monkeypatch.setenv("CALCULATOR_DATA_DIR", str(target))
+    monkeypatch.setenv("CALCULATOR_LIVE_GIT_URL", str(repo))
+    monkeypatch.setenv("CALCULATOR_LIVE_GIT_REF", "main")
+    monkeypatch.setenv("CALCULATOR_LIVE_GIT_CACHE_DIR", str(cache))
+    _reset_caches()
+
+    first = sync_catalog()
+    assert first["refresh"]["status"] == "success"
+    assert first["catalog_items"] == 1
+
+    # La source disparaît (réseau coupé / dépôt déplacé) : le fetch va échouer.
+    shutil.rmtree(repo)
+
+    second = sync_catalog()
+    assert second["status"] == "success"  # la synchro globale tient
+    assert second["refresh"]["status"] == "stale"
+    assert second["refresh"]["error"]
+    assert second["catalog_items"] == 1  # données précédentes conservées
+    assert (cache / ".git").exists()
+    assert (target / "CATALOGS/cloud/compute.yaml").exists()
+
+
+def test_redact_url_masks_credentials():
+    assert _redact_url("https://user:token@gitlab.internal/quoteflow.git") == (
+        "https://[redacted]@gitlab.internal/quoteflow.git"
+    )
+    assert _redact_url("http://x:y@host/r") == "http://[redacted]@host/r"
+    # Rien à masquer : URL sans credentials et valeurs vides inchangées.
+    assert _redact_url("https://gitlab.internal/quoteflow.git") == "https://gitlab.internal/quoteflow.git"
+    assert _redact_url(None) is None
+    assert _redact_url("") == ""

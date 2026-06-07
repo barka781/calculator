@@ -109,6 +109,9 @@ const state = {
   lic: { all: [], loaded: false, loading: false, error: "", query: "", vendor: "", term: "", page: 1 },
   quotes: quoteBoot.quotes,
   activeQuoteId: quoteBoot.activeQuoteId,
+  syncing: false,
+  syncResult: null,
+  syncError: "",
 };
 
 const app = document.querySelector("#app");
@@ -198,6 +201,15 @@ const money = (v, compact = false) =>
   }).format(Number(v) || 0);
 
 const num = (v) => new Intl.NumberFormat("fr-FR").format(Number(v) || 0);
+
+// Date ISO → libellé court fr ; tolère valeur vide ou invalide sans casser le rendu.
+const fmtDate = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? String(iso)
+    : d.toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" });
+};
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
@@ -680,6 +692,10 @@ function mount() {
 
         <aside id="summary-slot">${summarySkeleton()}</aside>
       </div>
+
+      <footer class="sitefoot">
+        <div id="sync-foot" class="sync"></div>
+      </footer>
     </div>`;
   renderQuoteControls();
   wireEvents();
@@ -800,6 +816,57 @@ function renderBanner() {
         <button class="btn btn--primary btn--sm" data-retry>Réessayer</button>
       </div>
     </div>`;
+}
+
+/* ---------- Rendu : fraîcheur de la source (pied de page) ----------
+   Alimenté par /health (bloc `sync`) : source live/locale, commit + date,
+   dernière synchro. Le statut « stale » remonte d'un refresh dégradé
+   (source distante injoignable mais cache conservé). */
+function renderSyncFoot() {
+  const el = document.querySelector("#sync-foot");
+  if (!el) return;
+
+  const sync = state.health?.sync || null;
+  if (!state.online || !sync) {
+    el.innerHTML = `<span class="sync__src">Source de données indisponible</span>`;
+    return;
+  }
+
+  const src = sync.source || {};
+  const git = src.git || {};
+  const isLive = src.kind === "live_git";
+  const srcLabel = isLive ? "QuoteFlow — flux live (dépôt git maîtrisé)" : "QuoteFlow — copie locale";
+  const repo = git.url || git.remote || "";
+
+  const staleRefresh = state.syncResult?.refresh?.status === "stale";
+  let badgeCls = "is-fresh";
+  let badgeLabel = "À jour";
+  if (staleRefresh) {
+    badgeCls = "is-stale";
+    badgeLabel = "Source distante injoignable · cache conservé";
+  } else if (!sync.is_synchronized) {
+    badgeCls = "is-warn";
+    badgeLabel = "Mise à jour disponible";
+  }
+
+  const parts = [];
+  if (git.commit) parts.push(`commit <code>${esc(git.commit)}</code>`);
+  if (git.commit_date) parts.push(esc(fmtDate(git.commit_date)));
+  const lastSyncAt = sync.last_sync?.synced_at;
+  parts.push(lastSyncAt ? `synchronisé le ${esc(fmtDate(lastSyncAt))}` : "jamais synchronisé");
+
+  const err = state.syncError ? `<span class="sync__err">${esc(state.syncError)}</span>` : "";
+
+  el.innerHTML = `
+    <div class="sync__info">
+      <span class="sync__badge ${badgeCls}"><span class="dot"></span>${esc(badgeLabel)}</span>
+      <span class="sync__src">${esc(srcLabel)}</span>
+      <span class="sync__meta">${parts.join(" · ")}${repo ? ` · <span class="sync__repo">${esc(repo)}</span>` : ""}</span>
+      ${err}
+    </div>
+    <button class="btn btn--ghost btn--sm" data-sync ${state.syncing ? "disabled" : ""}>${
+      state.syncing ? "Synchronisation…" : "Synchroniser"
+    }</button>`;
 }
 
 /* ---------- Rendu : catalogue ---------- */
@@ -1255,6 +1322,7 @@ function render() {
   renderCatalog();
   renderSummaryLines();
   renderSummaryTotals();
+  renderSyncFoot();
 }
 
 /* ---------- Événements ---------- */
@@ -1265,7 +1333,7 @@ function wireEvents() {
 }
 
 function onClick(e) {
-  const t = e.target.closest("[data-family-toggle],[data-toggle-all],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close]");
+  const t = e.target.closest("[data-family-toggle],[data-toggle-all],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-sync],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close]");
   if (!t) return;
 
   if (t.dataset.quoteClose) {
@@ -1377,7 +1445,34 @@ function onClick(e) {
 
   if (t.hasAttribute("data-retry")) {
     loadAll();
+    return;
   }
+
+  if (t.hasAttribute("data-sync")) {
+    runSync();
+  }
+}
+
+// Déclenche une synchronisation côté backend (refresh de la source live + copie),
+// puis recharge la fraîcheur et le catalogue. Passe par fetchJson → bénéficie du
+// repli automatique sur le backend local si l'URL configurée est injoignable.
+async function runSync() {
+  if (state.syncing) return;
+  state.syncing = true;
+  state.syncError = "";
+  renderSyncFoot();
+  try {
+    state.syncResult = await fetchJson("api/sync/catalog", {
+      method: "POST",
+      params: { refresh: true },
+      timeout: 60000,
+    });
+  } catch {
+    state.syncError = "Synchronisation impossible";
+  } finally {
+    state.syncing = false;
+  }
+  await loadAll();
 }
 
 function addProduct(sku, source) {

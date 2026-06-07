@@ -1368,3 +1368,86 @@ mark {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ---------- Pied de page : fraîcheur de la source ---------- */
+.sitefoot {
+  margin-top: 26px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.sync {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+.sync__info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted);
+}
+.sync__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.sync__badge .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.sync__badge.is-fresh {
+  color: var(--green-bright);
+  border-color: var(--green-line);
+  background: var(--green-soft);
+}
+.sync__badge.is-fresh .dot {
+  background: var(--green-bright);
+  box-shadow: 0 0 0 4px rgba(37, 201, 138, 0.18);
+}
+.sync__badge.is-warn {
+  color: var(--warn);
+  border-color: rgba(224, 166, 75, 0.4);
+  background: rgba(224, 166, 75, 0.1);
+}
+.sync__badge.is-warn .dot {
+  background: var(--warn);
+}
+.sync__badge.is-stale {
+  color: var(--danger);
+  border-color: rgba(236, 106, 115, 0.4);
+  background: rgba(236, 106, 115, 0.1);
+}
+.sync__badge.is-stale .dot {
+  background: var(--danger);
+}
+.sync__src {
+  font-weight: 600;
+  color: var(--ink);
+}
+.sync__meta code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink);
+}
+.sync__repo {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.sync__err {
+  color: var(--danger);
+  font-weight: 600;
+}
