@@ -2,10 +2,13 @@
    Familles dépliables, panier + résumé financier temps réel via /api/quote.
    Le backend applique : prix_remisé = public × (1 − standard%) × (1 − commerciale%). */
 
-const API_BASE =
+const LOCAL_FALLBACK = "http://127.0.0.1:8001";
+// URL de l'API : window > localStorage > backend local. Mutable : voir le repli
+// automatique dans fetchJson (une URL mémorisée invalide ne bloque plus le front).
+let apiBase =
   window.CALCULATOR_API_BASE ||
   localStorage.getItem("calculatorApiBase") ||
-  "http://127.0.0.1:8001";
+  LOCAL_FALLBACK;
 
 const PAGE_SIZE = 50;
 const PERIODS = [1, 12, 24, 36, 48, 60];
@@ -198,20 +201,20 @@ const num = (v) => new Intl.NumberFormat("fr-FR").format(Number(v) || 0);
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
-function buildUrl(path, params = {}) {
-  const base = API_BASE.endsWith("/") ? API_BASE : `${API_BASE}/`;
-  const url = new URL(path, base);
+function buildUrl(path, params = {}, base = apiBase) {
+  const root = base.endsWith("/") ? base : `${base}/`;
+  const url = new URL(path, root);
   Object.entries(params).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
   });
   return url.toString();
 }
 
-async function fetchJson(path, options = {}) {
+async function fetchOnce(base, path, options = {}) {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), options.timeout || 12000);
   try {
-    const res = await fetch(buildUrl(path, options.params), {
+    const res = await fetch(buildUrl(path, options.params, base), {
       ...options,
       headers: { "content-type": "application/json", ...(options.headers || {}) },
       signal: controller.signal,
@@ -220,6 +223,27 @@ async function fetchJson(path, options = {}) {
     return res.json();
   } finally {
     window.clearTimeout(timeout);
+  }
+}
+
+async function fetchJson(path, options = {}) {
+  try {
+    return await fetchOnce(apiBase, path, options);
+  } catch (err) {
+    // Repli automatique : une URL configurée (window/localStorage) injoignable ou
+    // malformée ne doit pas bloquer le front. On tente une fois le backend local ;
+    // si ça répond, on bascule pour le reste de la session (sans toucher localStorage).
+    if (apiBase !== LOCAL_FALLBACK) {
+      try {
+        const data = await fetchOnce(LOCAL_FALLBACK, path, options);
+        console.warn(`[calculator] API « ${apiBase} » injoignable → repli automatique sur ${LOCAL_FALLBACK}`);
+        apiBase = LOCAL_FALLBACK;
+        return data;
+      } catch {
+        // Le repli local a aussi échoué : on propage l'erreur d'origine.
+      }
+    }
+    throw err;
   }
 }
 
@@ -768,7 +792,7 @@ function renderBanner() {
     <div class="banner">
       <span class="banner__icon">${I.warn}</span>
       <div>
-        <div class="banner__title">API indisponible sur <code>${esc(API_BASE)}</code></div>
+        <div class="banner__title">API indisponible sur <code>${esc(apiBase)}</code></div>
         <div class="banner__text">${esc(state.apiError || "Le backend FastAPI du calculateur doit être démarré.")}</div>
       </div>
       <div class="banner__actions">
@@ -1343,7 +1367,7 @@ function onClick(e) {
   }
 
   if (t.hasAttribute("data-set-api")) {
-    const next = window.prompt("URL de l'API du calculateur :", API_BASE);
+    const next = window.prompt("URL de l'API du calculateur :", apiBase);
     if (next && next.trim()) {
       localStorage.setItem("calculatorApiBase", next.trim());
       window.location.reload();
