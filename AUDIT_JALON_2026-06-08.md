@@ -15,13 +15,13 @@
 - `09b484f` — repli hors-ligne "plus jamais d'écran vide" + panneau financier redimensionnable.
 - `9350ea9` — stack Docker complète, version runtime, durcissements initiaux, tests frontend.
 - Branche `main` synchronisée avec `origin/main`.
-- Version applicative courante : `0.1.1` via le fichier `Version`.
+- Version applicative courante : `0.1.2` via le fichier `Version`.
 
 ### Validation réalisée
 
 - `docker compose up -d --build` OK avec `CALCULATOR_POSTGRES_PASSWORD=dev-change-me`.
-- Conteneurs `postgres`, `app`, `web` healthy.
-- `GET /health` via `http://localhost:8088` OK, avec `version: "0.1.1"`.
+- Conteneurs `database`, `backend`, `frontend` healthy.
+- `GET /health` via `http://localhost:8088` OK, avec `version: "0.1.2"`.
 - `GET /Version` OK.
 - `GET /api/catalog?limit=1` OK.
 - `GET /config.js` OK, same-origin.
@@ -97,7 +97,7 @@
   - `data_source: db`,
   - `catalog_items: 136`,
   - `license_items: 8834`,
-  - `version: 0.1.1`.
+  - `version: 0.1.2`.
 
 ### À surveiller
 
@@ -112,11 +112,11 @@
 ### Livré
 
 - Stack Compose complète :
-  - `web` : Nginx non-root, frontend statique, reverse-proxy `/api/*` et `/health`,
-  - `app` : FastAPI non-root,
-  - `postgres` : PostgreSQL 16 Alpine.
+  - `frontend` : Nginx non-root, frontend statique, reverse-proxy `/api/*` et `/health`,
+  - `backend` : FastAPI non-root,
+  - `database` : PostgreSQL 16 Alpine.
 - Same-origin via Nginx : pas de CORS côté navigateur en production Docker.
-- Port public local : `8088:8080` uniquement sur `web`.
+- Port public local : `8088:8080` uniquement sur `frontend`.
 - Aucun port PostgreSQL publié sur l'hôte.
 - Mot de passe PostgreSQL requis via `CALCULATOR_POSTGRES_PASSWORD`.
 - `.env.example` ajouté sans secret réel.
@@ -138,17 +138,17 @@
 - `CALCULATOR_POSTGRES_PASSWORD=dev-change-me docker compose config` OK.
 - `CALCULATOR_POSTGRES_PASSWORD=dev-change-me docker compose up -d --build` OK.
 - `docker compose ps` :
-  - `calculator-postgres` healthy,
-  - `calculator-api` healthy,
-  - `calculator-web` healthy.
+  - `calculator-database` healthy,
+  - `calculator-backend` healthy,
+  - `calculator-frontend` healthy.
 - `curl http://localhost:8088/health` OK.
-- `curl http://localhost:8088/Version` -> `0.1.1`.
+- `curl http://localhost:8088/Version` -> `0.1.2`.
 - `curl -I http://localhost:8088/src/snapshot.json` -> 200 + headers sécurité.
 
 ### À surveiller
 
 - Ressources conteneurs : pas encore de limites CPU/mémoire.
-- Nginx upstream `app:8001` reste simple ; si `app` est recréé avec nouvelle IP, un reload Nginx peut être nécessaire. À durcir plus tard avec resolver Docker (`127.0.0.11`) si besoin prod.
+- Nginx upstream `backend:8001` reste simple ; si `backend` est recréé avec nouvelle IP, un reload Nginx peut être nécessaire. À durcir plus tard avec resolver Docker (`127.0.0.11`) si besoin prod.
 - Le fichier `.env` réel n'est pas versionné : chaque environnement doit définir `CALCULATOR_POSTGRES_PASSWORD`.
 - La stack a été laissée démarrée localement sur `http://localhost:8088` après validation.
 

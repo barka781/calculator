@@ -54,22 +54,22 @@ Docker Compose lit aussi automatiquement un fichier `.env` local (ignoré par gi
 Un modèle non secret est fourni dans `.env.example`.
 
 L'application est alors servie sur `http://localhost:8088` (port côté hôte
-configurable dans `docker-compose.yml`, service `web`).
+configurable dans `docker-compose.yml`, service `frontend`).
 
 Architecture (3 services) :
 
-- **`web`** (Nginx non-root, port hôte `8088` → `8080`) : sert le frontend statique et relaie `/api/*`
+- **`frontend`** (Nginx non-root, port hôte `8088` → `8080`) : sert le frontend statique et relaie `/api/*`
   et `/health` vers l'API. Tout passe par une seule origine → ni CORS, ni URL
   d'API à configurer côté navigateur (`config.js` est résolu à `window.location.origin`).
-- **`app`** (FastAPI non-root) : l'API. Au démarrage, attend PostgreSQL puis ingère les
+- **`backend`** (FastAPI non-root) : l'API. Au démarrage, attend PostgreSQL puis ingère les
   YAML embarqués. Aucune de ces étapes ne bloque le service : en cas de base
   injoignable, l'API se replie automatiquement sur les YAML (disponibilité d'abord).
-- **`postgres`** : la base, données persistées dans le volume `calculator_pgdata`.
+- **`database`** (PostgreSQL 16 Alpine) : la base, données persistées dans le volume `calculator_pgdata`.
   Aucun port PostgreSQL n'est publié sur l'hôte.
 
 Pour une VM derrière un reverse proxy : n'exposer publiquement que le service
-`web` (mapper `8088:8080` ou pointer le proxy dessus) ; `app` et `postgres`
-restent sur le réseau interne du compose.
+`frontend` (mapper `8088:8080` ou pointer le proxy dessus) ; `backend` et
+`database` restent sur le réseau interne du compose.
 
 Arrêt / logs :
 
