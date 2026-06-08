@@ -12,6 +12,7 @@ from .architecture import (
 )
 from .catalog import find_catalog_item, load_catalog_items, search_catalog
 from .config import (
+    calculator_version,
     catalogs_dir,
     data_source,
     licences_file,
@@ -29,7 +30,7 @@ from .sync import sync_status
 
 app = FastAPI(
     title="Cloud Temple Calculator API",
-    version="0.1.0",
+    version=calculator_version(),
     description="API publique du calculateur Cloud Temple, adossée à PostgreSQL (repli YAML si BDD indisponible).",
 )
 
@@ -49,6 +50,7 @@ def health() -> dict[str, Any]:
     sync = sync_summary()
     return {
         "status": "ok",
+        "version": calculator_version(),
         "data_source": data_source(),
         "catalog_items": catalog_count,
         "license_items": license_count,

@@ -23,6 +23,8 @@ const PERIODS = [1, 12, 24, 36, 48, 60];
 const CACHE_KEY = "calc.dataCache";
 const SNAPSHOT_URL = "./src/snapshot.json";
 let embeddedSnapshot = null; // snapshot embarqué chargé à la demande (mémoïsé)
+const { CACHE_VERSION, chooseOfflineData } = window.CalculatorOfflineData;
+const { calculateLocalQuote } = window.CalculatorQuoteCore;
 
 /* ---------- Panneau financier redimensionnable ----------
    Largeur de la colonne résumé pilotée par la variable CSS --summary-w, bornée
@@ -191,6 +193,12 @@ Object.defineProperties(state, {
       activeQuote().quoteError = String(v || "");
     },
   },
+  quoteSource: {
+    get: () => activeQuote().quoteSource,
+    set: (v) => {
+      activeQuote().quoteSource = v === "local" ? "local" : "live";
+    },
+  },
 });
 persistQuotes();
 
@@ -317,6 +325,7 @@ function createQuote(data = {}, index = 0) {
     quote: data.quote || null,
     quoteLoading: false,
     quoteError: "",
+    quoteSource: data.quoteSource === "local" ? "local" : "live",
   };
 }
 
@@ -457,6 +466,7 @@ function cacheLiveData(health, catalogResponse) {
       CACHE_KEY,
       JSON.stringify({
         savedAt: new Date().toISOString(),
+        version: CACHE_VERSION,
         health,
         catalog: { items: catalogResponse.items || [] },
       })
@@ -469,7 +479,7 @@ function cacheLiveData(health, catalogResponse) {
 function readCache() {
   try {
     const data = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
-    if (data && data.health && Array.isArray(data.catalog?.items)) return data;
+    if (window.CalculatorOfflineData.isValidCachePayload(data)) return data;
   } catch {
     /* cache illisible : ignoré */
   }
@@ -495,18 +505,18 @@ async function loadEmbeddedSnapshot() {
 // à la date du build). Renvoie true si des données ont pu être affichées.
 async function applyOfflineFallback() {
   const cache = readCache();
-  const snapshot = await loadEmbeddedSnapshot();
+  const choice = chooseOfflineData(cache, cache ? null : await loadEmbeddedSnapshot());
+  if (!choice) {
+    state.dataStale = false;
+    return false;
+  }
 
-  // Source du catalogue/health : cache si présent, sinon snapshot embarqué.
-  const primary = cache || snapshot;
-  if (!primary) return false;
-
-  state.health = primary.health || null;
-  state.catalog = ((primary.catalog?.items) || []).map(normalizeCatalog);
+  state.health = choice.data.health || null;
+  state.catalog = ((choice.data.catalog?.items) || []).map(normalizeCatalog);
   groupCatalog();
-  state.dataSource = cache ? "cache" : "embedded";
+  state.dataSource = choice.source;
   state.dataStale = true;
-  state.dataSavedAt = cache ? cache.savedAt : snapshot?.generatedAt || "";
+  state.dataSavedAt = choice.savedAt;
   state.apiError = "";
   return true;
 }
@@ -543,7 +553,11 @@ async function loadAll() {
   // Filet anti « écran vide » : si le catalogue live a échoué (API injoignable ou
   // en erreur), on bascule sur le cache navigateur puis le snapshot embarqué.
   if (!catalogOk) {
-    await applyOfflineFallback();
+    const fallbackOk = await applyOfflineFallback();
+    if (!fallbackOk) {
+      state.dataStale = false;
+      state.dataSavedAt = "";
+    }
   }
 
   state.loading = false;
@@ -712,6 +726,7 @@ function clearCart() {
   state.quote = null;
   state.quoteLoading = false;
   state.quoteError = "";
+  state.quoteSource = "live";
   persistCart();
 }
 
@@ -721,11 +736,41 @@ function scheduleQuote() {
   quoteTimer = window.setTimeout(runQuote, 220);
 }
 
+async function localQuoteForCart() {
+  let catalog = state.catalog;
+  let licenses = state.lic.loaded ? state.lic.all : [];
+
+  const needsSnapshotCatalog = state.cart.some((line) => line.source === "catalog" && !catalog.some((item) => item.sku === line.sku));
+  const needsSnapshotLicenses = state.cart.some((line) => line.source === "license" && !licenses.some((item) => item.sku === line.sku));
+
+  if (needsSnapshotCatalog || needsSnapshotLicenses) {
+    const snapshot = await loadEmbeddedSnapshot();
+    if (snapshot?.catalog?.items?.length && needsSnapshotCatalog) {
+      catalog = snapshot.catalog.items.map(normalizeCatalog);
+    }
+    if (snapshot?.licenses?.items?.length && needsSnapshotLicenses) {
+      licenses = snapshot.licenses.items.map(normalizeLicense);
+      state.lic.all = licenses;
+      state.lic.loaded = true;
+      state.lic.error = "";
+    }
+  }
+
+  return calculateLocalQuote({
+    lines: state.cart,
+    catalog,
+    licenses,
+    periodMonths: state.period,
+    discountPercent: state.discount,
+  });
+}
+
 async function runQuote() {
   if (!state.cart.length) {
     state.quote = null;
     state.quoteLoading = false;
     state.quoteError = "";
+    state.quoteSource = "live";
     renderSummaryLines();
     renderSummaryTotals();
     return;
@@ -743,9 +788,17 @@ async function runQuote() {
     const data = await fetchJson("api/quote", { method: "POST", body: JSON.stringify(body) });
     if (reqId !== quoteReq) return;
     state.quote = data;
+    state.quoteSource = "live";
   } catch {
     if (reqId !== quoteReq) return;
-    state.quoteError = "Calcul indisponible";
+    try {
+      state.quote = await localQuoteForCart();
+      state.quoteSource = "local";
+      state.quoteError = "";
+    } catch {
+      state.quoteError = state.dataStale ? "Calcul indisponible hors-ligne" : "Calcul indisponible";
+      state.quoteSource = "live";
+    }
   } finally {
     if (reqId === quoteReq) {
       state.quoteLoading = false;
@@ -947,14 +1000,16 @@ function wireResizer() {
   if (!layout || !handle) return;
 
   let dragging = false;
+  let pendingWidth = readSummaryWidth();
   const onMove = (e) => {
     if (!dragging) return;
-    applySummaryWidth(layout.getBoundingClientRect().right - e.clientX);
+    pendingWidth = applySummaryWidth(layout.getBoundingClientRect().right - e.clientX, false);
     e.preventDefault();
   };
   const stop = () => {
     if (!dragging) return;
     dragging = false;
+    applySummaryWidth(pendingWidth, true);
     handle.classList.remove("is-dragging");
     document.body.classList.remove("is-resizing");
     window.removeEventListener("pointermove", onMove);
@@ -979,7 +1034,7 @@ function renderStatus() {
   if (state.online) {
     const h = state.health || {};
     el.outerHTML = `<span id="api-status" class="status-pill is-online"><span class="dot"></span>En ligne · ${num(h.catalog_items)} produits · ${num(h.license_items)} licences</span>`;
-  } else if (state.catalog.length) {
+  } else if (state.dataStale && state.catalog.length) {
     el.outerHTML = `<span id="api-status" class="status-pill is-local" title="API injoignable — catalogue servi depuis une source locale"><span class="dot"></span>Hors ligne · données locales</span>`;
   } else {
     el.outerHTML = `<span id="api-status" class="status-pill is-offline"><span class="dot"></span>Hors ligne</span>`;
@@ -989,7 +1044,7 @@ function renderStatus() {
 function renderBanner() {
   const slot = document.querySelector("#banner-slot");
   if (!slot) return;
-  if (state.online || state.loading) {
+  if (!state.dataStale || state.online || state.loading) {
     slot.innerHTML = "";
     return;
   }
@@ -997,12 +1052,13 @@ function renderBanner() {
   if (state.catalog.length) {
     const srcLabel = state.dataSource === "cache" ? "votre dernière visite en ligne" : "snapshot embarqué";
     const when = state.dataSavedAt ? ` du ${esc(fmtDate(state.dataSavedAt))}` : "";
+    const quoteText = state.quoteSource === "local" ? " Le résumé financier est calculé localement ; l'export reste indisponible tant que l'API ne répond pas." : "";
     slot.innerHTML = `
       <div class="banner banner--info">
         <span class="banner__icon">${I.warn}</span>
         <div>
           <div class="banner__title">Mode hors-ligne — données locales affichées</div>
-          <div class="banner__text">API <code>${esc(apiBase)}</code> injoignable. Catalogue issu du ${srcLabel}${when} ; les montants peuvent être périmés.</div>
+          <div class="banner__text">API <code>${esc(apiBase)}</code> injoignable. Catalogue issu du ${srcLabel}${when} ; les montants peuvent être périmés.${quoteText}</div>
         </div>
         <div class="banner__actions">
           <button class="btn btn--sm" data-set-api>Changer l'URL</button>
@@ -1035,7 +1091,7 @@ function renderSyncFoot() {
   if (!el) return;
 
   // Hors-ligne : on expose la source de repli (cache/snapshot) et sa fraîcheur.
-  if (!state.online) {
+  if (state.dataStale || !state.online) {
     if (state.catalog.length) {
       const srcLabel =
         state.dataSource === "cache" ? "Cache navigateur (dernière visite)" : "Snapshot embarqué (livré avec l'app)";
@@ -1393,7 +1449,11 @@ function renderSummaryLines() {
   if (badge) badge.textContent = `${state.cart.length} ligne${state.cart.length > 1 ? "s" : ""}`;
   if (clearBtn) clearBtn.hidden = state.cart.length === 0;
   document.querySelectorAll("#summary-export .export-btn").forEach((b) => {
-    if (!b.dataset.busy) b.disabled = state.cart.length === 0;
+    if (!b.dataset.busy) {
+      b.dataset.defaultTitle ||= b.title;
+      b.disabled = state.cart.length === 0 || state.quoteSource === "local";
+      b.title = state.quoteSource === "local" ? "Export indisponible hors-ligne" : b.dataset.defaultTitle;
+    }
   });
 
   if (!state.cart.length) {
@@ -1542,6 +1602,7 @@ function renderSummaryTotals() {
     <div class="total-row"><span class="lbl">Projection ${esc(monthsLabel)}</span><span class="val">${esc(money(q.period_discounted_total))}</span></div>
     <div class="total-row"><span class="lbl">Total à l'engagement</span><span class="val">${esc(money(q.total_on_engagement))}</span></div>
     <div class="total-row total-row--save"><span class="lbl">Économie sur ${esc(monthsLabel)}</span><span class="val">${esc(money(q.savings_total))}</span></div>
+    ${state.quoteSource === "local" ? `<div class="total-sub">Calcul local hors-ligne · export indisponible jusqu'au retour de l'API</div>` : ""}
     ${state.quoteLoading ? `<div class="total-sub">Mise à jour…</div>` : ""}`;
 }
 

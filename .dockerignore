@@ -1,0 +1,16 @@
+.git/
+.venv/
+backend/.venv/
+backend/.pytest_cache/
+backend/tests/
+backend/data/_live_quoteflow/
+backend/data/LICENCES/SOURCE/
+backend/data/LICENCES/TRAIN/
+frontend/node_modules/
+frontend/tests/
+node_modules/
+.env
+.env.local
+*.py[cod]
+__pycache__/
+.DS_Store

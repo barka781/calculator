@@ -1,0 +1,12 @@
+# Environnements et caches locaux — jamais dans l'image.
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+tests/
+# Cache de la sync vivante (re-cloné au runtime si configuré).
+data/_live_quoteflow/
+# Données d'entraînement / sources licences hors runtime.
+data/LICENCES/SOURCE/
+data/LICENCES/TRAIN/
+.DS_Store

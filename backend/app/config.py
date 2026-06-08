@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 import os
+from urllib.parse import quote_plus
 
 
 @lru_cache(maxsize=1)
@@ -22,11 +23,20 @@ def database_url() -> str:
     """URL SQLAlchemy de la base PostgreSQL.
 
     Surchargée par la variable d'environnement DATABASE_URL.
-    Défaut : le Postgres local lancé via docker-compose.yml.
+    Peut aussi être construite depuis CALCULATOR_POSTGRES_*.
     """
-    return os.getenv(
-        "DATABASE_URL",
-        "postgresql+psycopg2://calculator:calculator@localhost:5432/calculator",
+    configured = os.getenv("DATABASE_URL")
+    if configured:
+        return configured
+
+    user = os.getenv("CALCULATOR_POSTGRES_USER", "calculator")
+    password = os.getenv("CALCULATOR_POSTGRES_PASSWORD", "calculator")
+    host = os.getenv("CALCULATOR_POSTGRES_HOST", "localhost")
+    port = os.getenv("CALCULATOR_POSTGRES_PORT", "5432")
+    database = os.getenv("CALCULATOR_POSTGRES_DB", "calculator")
+    return (
+        "postgresql+psycopg2://"
+        f"{quote_plus(user)}:{quote_plus(password)}@{host}:{port}/{quote_plus(database)}"
     )
 
 
@@ -38,6 +48,26 @@ def data_source() -> str:
     Non mémorisée pour rester surchargée à chaud (tests).
     """
     return os.getenv("CALCULATOR_SOURCE", "db").strip().lower()
+
+
+def calculator_version() -> str:
+    configured = os.getenv("CALCULATOR_VERSION")
+    if configured and configured.strip():
+        return configured.strip()
+
+    candidates = (
+        project_root().parent / "Version",
+        project_root() / "Version",
+        Path("/app/Version"),
+    )
+    for candidate in candidates:
+        try:
+            value = candidate.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if value:
+            return value
+    return "0.1.0"
 
 
 def live_git_url() -> str | None:
@@ -74,7 +104,13 @@ def quoteflow_root() -> Path:
     configured = os.getenv("CALCULATOR_QUOTEFLOW_ROOT")
     if configured:
         return Path(configured).expanduser().resolve()
-    return project_root().parents[1] / "quoteflow"
+    # Dev : .../Quoteflow/calculator/backend → QuoteFlow voisin .../Quoteflow/quoteflow.
+    # Conteneur / arborescence plate (project_root == /app) : pas de voisin ;
+    # on évite l'IndexError et on renvoie un chemin (inexistant) cohérent, ce qui
+    # marque simplement la source live comme indisponible.
+    parents = project_root().parents
+    base = parents[1] if len(parents) >= 2 else project_root()
+    return base / "quoteflow"
 
 
 def source_root() -> Path:

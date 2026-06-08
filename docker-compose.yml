@@ -1,24 +1,62 @@
-# PostgreSQL local pour le Cloud Temple Calculator.
-# Démarrage : docker compose up -d
-# Connexion  : postgresql+psycopg2://calculator:calculator@localhost:5432/calculator
+# Stack complet du Cloud Temple Calculator : Nginx (front + proxy) → API → PostgreSQL.
+#
+#   docker compose up -d --build
+#   → application accessible sur http://localhost:8088
+#
+# Pour une VM derrière un reverse proxy : n'exposer que le service `web` (8088).
 services:
   postgres:
     image: postgres:16-alpine
     container_name: calculator-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: calculator
-      POSTGRES_PASSWORD: calculator
-      POSTGRES_DB: calculator
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${CALCULATOR_POSTGRES_USER:-calculator}
+      POSTGRES_PASSWORD: ${CALCULATOR_POSTGRES_PASSWORD:?Définir CALCULATOR_POSTGRES_PASSWORD dans .env ou l'environnement}
+      POSTGRES_DB: ${CALCULATOR_POSTGRES_DB:-calculator}
     volumes:
       - calculator_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U calculator -d calculator"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: calculator-api
+    restart: unless-stopped
+    environment:
+      # Host = nom du service postgres sur le réseau compose.
+      CALCULATOR_POSTGRES_HOST: postgres
+      CALCULATOR_POSTGRES_PORT: 5432
+      CALCULATOR_POSTGRES_USER: ${CALCULATOR_POSTGRES_USER:-calculator}
+      CALCULATOR_POSTGRES_PASSWORD: ${CALCULATOR_POSTGRES_PASSWORD:?Définir CALCULATOR_POSTGRES_PASSWORD dans .env ou l'environnement}
+      CALCULATOR_POSTGRES_DB: ${CALCULATOR_POSTGRES_DB:-calculator}
+      CALCULATOR_SOURCE: db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Pas de port publié : l'API n'est jointe que par `web` (réseau interne).
+    # Décommenter pour un accès direct en debug :
+    # ports:
+    #   - "8001:8001"
+    expose:
+      - "8001"
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: calculator-web
+    restart: unless-stopped
+    ports:
+      # 8088 côté hôte (8080 est souvent déjà pris). Adapter au besoin.
+      - "8088:8080"
+    depends_on:
+      app:
+        condition: service_healthy
 
 volumes:
   calculator_pgdata:
