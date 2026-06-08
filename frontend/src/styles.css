@@ -229,6 +229,15 @@ select {
 .status-pill.is-offline .dot {
   background: var(--danger);
 }
+/* Hors-ligne mais des données locales (cache/snapshot) sont servies. */
+.status-pill.is-local {
+  color: var(--warn);
+  border-color: rgba(224, 166, 75, 0.4);
+  background: rgba(224, 166, 75, 0.1);
+}
+.status-pill.is-local .dot {
+  background: var(--warn);
+}
 
 /* ---------- Boutons ---------- */
 .btn {
@@ -383,6 +392,17 @@ select {
   flex-shrink: 0;
   margin-top: 2px;
 }
+/* Variante non bloquante : mode hors-ligne avec données locales servies. */
+.banner--info {
+  border-color: rgba(224, 166, 75, 0.32);
+  background: rgba(224, 166, 75, 0.09);
+}
+.banner--info .banner__icon {
+  color: var(--warn);
+}
+.banner--info .banner__title {
+  color: #f0c987;
+}
 .banner__title {
   font-weight: 700;
   color: #ffb4b9;
@@ -408,7 +428,8 @@ select {
 /* ---------- Layout principal ---------- */
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 600px;
+  /* Largeur du résumé pilotée par --summary-w (poignée + presets), bornée. */
+  grid-template-columns: minmax(0, 1fr) clamp(360px, var(--summary-w, 600px), 820px);
   gap: 26px;
   align-items: start;
 }
@@ -861,6 +882,69 @@ select {
   box-shadow: var(--shadow);
   overflow: hidden;
 }
+
+/* Poignée de redimensionnement, ancrée sur le bord interne gauche du panneau.
+   Comme .summary est sticky, la poignée reste visible pendant le défilement. */
+.summary__resizer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  touch-action: none; /* drag fluide au pointeur tactile */
+  z-index: 4;
+}
+.summary__resizer::before {
+  content: "";
+  width: 3px;
+  height: 42px;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background 0.15s ease, height 0.15s ease;
+}
+.summary__resizer:hover::before,
+.summary__resizer.is-dragging::before {
+  background: var(--green-bright);
+  height: 72px;
+}
+/* Pendant le drag : curseur global + pas de sélection de texte parasite. */
+body.is-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* Presets de largeur (S / M / L) dans l'en-tête du résumé. */
+.summary__sizes {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.summary__sizes .size-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  width: 22px;
+  height: 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1;
+}
+.summary__sizes .size-btn:hover {
+  color: var(--text);
+}
+.summary__sizes .size-btn.is-active {
+  background: var(--green-soft);
+  color: var(--green-bright);
+}
 .summary__head {
   display: flex;
   align-items: center;
@@ -1084,6 +1168,11 @@ select {
   .summary {
     position: static;
     max-height: none;
+  }
+  /* Mono-colonne : le redimensionnement n'a plus de sens. */
+  .summary__resizer,
+  .summary__sizes {
+    display: none;
   }
   .summary__lines {
     flex: none;

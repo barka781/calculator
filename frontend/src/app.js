@@ -13,6 +13,31 @@ let apiBase =
 const PAGE_SIZE = 50;
 const PERIODS = [1, 12, 24, 36, 48, 60];
 
+/* ---------- Repli « plus jamais d'écran vide » ----------
+   Deux filets sous l'API live :
+   - CACHE_KEY : cache navigateur (health + catalogue) réécrit à chaque réponse
+     live réussie → au prochain démarrage hors-ligne, on resert ces données fraîches.
+     Volontairement SANS les 8806 licences (quota localStorage ~5 Mo).
+   - SNAPSHOT_URL : snapshot embarqué livré avec l'image (catalogue + licences
+     complètes), dernier recours au tout premier chargement à froid sans API. */
+const CACHE_KEY = "calc.dataCache";
+const SNAPSHOT_URL = "./src/snapshot.json";
+let embeddedSnapshot = null; // snapshot embarqué chargé à la demande (mémoïsé)
+
+/* ---------- Panneau financier redimensionnable ----------
+   Largeur de la colonne résumé pilotée par la variable CSS --summary-w, bornée
+   côté CSS par clamp(360px … 820px). Réglable via la poignée de glissement et
+   les presets S/M/L, et mémorisée d'une session à l'autre. */
+const SUMMARY_WIDTH_KEY = "calc.summaryWidth";
+const SUMMARY_MIN = 360;
+const SUMMARY_MAX = 820;
+const SUMMARY_DEFAULT = 600;
+const SUMMARY_PRESETS = [
+  { px: 420, label: "S", title: "Compact" },
+  { px: 600, label: "M", title: "Standard" },
+  { px: 820, label: "L", title: "Large" },
+];
+
 /* ---------- Familles & groupes (mappés sur le champ `category` du backend) ---------- */
 const GROUPS = [
   { id: "infra", label: "Infrastructure — IaaS" },
@@ -102,6 +127,9 @@ const state = {
   online: false,
   apiError: "",
   loading: true,
+  dataSource: "live", // "live" | "cache" | "embedded"
+  dataStale: false, // true quand on sert un repli (API injoignable)
+  dataSavedAt: "", // horodatage de la donnée de repli affichée
   catalog: [],
   catalogByFamily: new Map(),
   search: "",
@@ -419,10 +447,76 @@ const termLabel = (t) => {
 };
 
 /* ---------- Données ---------- */
+
+// Mémorise les données live fraîches (health + catalogue) pour le prochain
+// démarrage hors-ligne. Volontairement SANS les licences (trop volumineuses pour
+// le quota localStorage) : celles-ci viennent du snapshot embarqué en repli.
+function cacheLiveData(health, catalogResponse) {
+  try {
+    localStorage.setItem(
+      CACHE_KEY,
+      JSON.stringify({
+        savedAt: new Date().toISOString(),
+        health,
+        catalog: { items: catalogResponse.items || [] },
+      })
+    );
+  } catch {
+    // Quota dépassé ou stockage indisponible : non bloquant, le snapshot embarqué prend le relais.
+  }
+}
+
+function readCache() {
+  try {
+    const data = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+    if (data && data.health && Array.isArray(data.catalog?.items)) return data;
+  } catch {
+    /* cache illisible : ignoré */
+  }
+  return null;
+}
+
+// Charge (une seule fois) le snapshot embarqué livré avec l'image.
+async function loadEmbeddedSnapshot() {
+  if (embeddedSnapshot) return embeddedSnapshot;
+  try {
+    const res = await fetch(SNAPSHOT_URL, { headers: { accept: "application/json" } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    embeddedSnapshot = await res.json();
+  } catch {
+    embeddedSnapshot = null;
+  }
+  return embeddedSnapshot;
+}
+
+// API injoignable : sert les meilleures données disponibles, sans jamais laisser
+// d'écran vide. Priorité au cache navigateur (vu en ligne récemment, donc le plus
+// frais pour cet utilisateur) ; à défaut, le snapshot embarqué (complet mais figé
+// à la date du build). Renvoie true si des données ont pu être affichées.
+async function applyOfflineFallback() {
+  const cache = readCache();
+  const snapshot = await loadEmbeddedSnapshot();
+
+  // Source du catalogue/health : cache si présent, sinon snapshot embarqué.
+  const primary = cache || snapshot;
+  if (!primary) return false;
+
+  state.health = primary.health || null;
+  state.catalog = ((primary.catalog?.items) || []).map(normalizeCatalog);
+  groupCatalog();
+  state.dataSource = cache ? "cache" : "embedded";
+  state.dataStale = true;
+  state.dataSavedAt = cache ? cache.savedAt : snapshot?.generatedAt || "";
+  state.apiError = "";
+  return true;
+}
+
 async function loadAll() {
   state.loading = true;
   state.apiError = "";
   renderStatus();
+
+  let catalogOk = false;
   try {
     state.health = await fetchJson("health", { timeout: 6000 });
     state.online = state.health?.status === "ok";
@@ -436,9 +530,20 @@ async function loadAll() {
       const data = await fetchJson("api/catalog", { params: { limit: 1000, include_deprecated: false } });
       state.catalog = (data.items || []).map(normalizeCatalog);
       groupCatalog();
+      catalogOk = true;
+      state.dataSource = "live";
+      state.dataStale = false;
+      state.dataSavedAt = "";
+      cacheLiveData(state.health, data); // données fraîches → cache navigateur
     } catch {
       state.apiError = "Catalogue indisponible";
     }
+  }
+
+  // Filet anti « écran vide » : si le catalogue live a échoué (API injoignable ou
+  // en erreur), on bascule sur le cache navigateur puis le snapshot embarqué.
+  if (!catalogOk) {
+    await applyOfflineFallback();
   }
 
   state.loading = false;
@@ -504,6 +609,23 @@ async function loadLicenses() {
   state.lic.loading = true;
   state.lic.error = "";
   renderLicenseResults();
+
+  // Hors-ligne : les licences viennent du snapshot embarqué (volontairement absentes
+  // du cache navigateur, cf. quota). Évite un appel réseau voué à l'échec.
+  if (!state.online) {
+    const snapshot = await loadEmbeddedSnapshot();
+    const items = snapshot?.licenses?.items || [];
+    if (items.length) {
+      state.lic.all = items.map(normalizeLicense);
+      state.lic.loaded = true;
+    } else {
+      state.lic.error = "Licences indisponibles hors connexion";
+    }
+    state.lic.loading = false;
+    renderLicenseResults();
+    return;
+  }
+
   try {
     // Le backend plafonne limit à 1000 : on pagine jusqu'à tout récupérer.
     const PAGE = 1000;
@@ -699,6 +821,8 @@ function mount() {
     </div>`;
   renderQuoteControls();
   wireEvents();
+  wireResizer();
+  applySummaryWidth(readSummaryWidth(), false); // restaure la largeur mémorisée
 }
 
 function quoteTabsHtml() {
@@ -751,11 +875,16 @@ function summarySkeleton() {
   const periodOpts = PERIODS.map(
     (p) => `<option value="${p}" ${p === state.period ? "selected" : ""}>${p === 1 ? "1 mois" : p % 12 === 0 ? `${p / 12} an${p / 12 > 1 ? "s" : ""}` : `${p} mois`}</option>`
   ).join("");
+  const sizeBtns = SUMMARY_PRESETS.map(
+    (p) => `<button class="size-btn" type="button" data-summary-size="${p.px}" title="${esc(p.title)} (${p.px}px)" aria-label="Largeur ${esc(p.title)}">${esc(p.label)}</button>`
+  ).join("");
   return `
     <div class="summary">
+      <div class="summary__resizer" title="Glisser pour redimensionner · double-clic pour réinitialiser" role="separator" aria-label="Redimensionner le panneau"></div>
       <div class="summary__head">
         <h2>Résumé financier</h2>
         <span class="summary__badge" id="count-badge">0 ligne</span>
+        <div class="summary__sizes" role="group" aria-label="Largeur du panneau">${sizeBtns}</div>
         <button class="btn btn--danger-ghost btn--sm" data-clear hidden id="clear-btn">Vider</button>
       </div>
       <div class="summary__config">
@@ -785,6 +914,64 @@ function summarySkeleton() {
     </div>`;
 }
 
+/* ---------- Panneau redimensionnable ---------- */
+function readSummaryWidth() {
+  const v = Number(localStorage.getItem(SUMMARY_WIDTH_KEY));
+  return Number.isFinite(v) && v > 0 ? clamp(v, SUMMARY_MIN, SUMMARY_MAX) : SUMMARY_DEFAULT;
+}
+
+// Applique la largeur (bornée) à la grille via --summary-w, met à jour le preset
+// actif et, sauf au boot, mémorise la valeur.
+function applySummaryWidth(px, persist = true) {
+  const w = clamp(Math.round(px), SUMMARY_MIN, SUMMARY_MAX);
+  const layout = document.querySelector(".layout");
+  if (layout) layout.style.setProperty("--summary-w", `${w}px`);
+  document.querySelectorAll("[data-summary-size]").forEach((b) => {
+    b.classList.toggle("is-active", Number(b.dataset.summarySize) === w);
+  });
+  if (persist) {
+    try {
+      localStorage.setItem(SUMMARY_WIDTH_KEY, String(w));
+    } catch {
+      /* stockage indisponible : non bloquant */
+    }
+  }
+  return w;
+}
+
+// Glissement de la poignée : la largeur = bord droit de la grille − position du
+// curseur (la poignée est sur le bord gauche du panneau, à droite de l'écran).
+function wireResizer() {
+  const layout = document.querySelector(".layout");
+  const handle = document.querySelector(".summary__resizer");
+  if (!layout || !handle) return;
+
+  let dragging = false;
+  const onMove = (e) => {
+    if (!dragging) return;
+    applySummaryWidth(layout.getBoundingClientRect().right - e.clientX);
+    e.preventDefault();
+  };
+  const stop = () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove("is-dragging");
+    document.body.classList.remove("is-resizing");
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", stop);
+  };
+  handle.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    handle.classList.add("is-dragging");
+    document.body.classList.add("is-resizing");
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", stop);
+    e.preventDefault();
+  });
+  // Double-clic : retour à la largeur standard.
+  handle.addEventListener("dblclick", () => applySummaryWidth(SUMMARY_DEFAULT));
+}
+
 /* ---------- Rendu : statut + bandeau ---------- */
 function renderStatus() {
   const el = document.querySelector("#api-status");
@@ -792,6 +979,8 @@ function renderStatus() {
   if (state.online) {
     const h = state.health || {};
     el.outerHTML = `<span id="api-status" class="status-pill is-online"><span class="dot"></span>En ligne · ${num(h.catalog_items)} produits · ${num(h.license_items)} licences</span>`;
+  } else if (state.catalog.length) {
+    el.outerHTML = `<span id="api-status" class="status-pill is-local" title="API injoignable — catalogue servi depuis une source locale"><span class="dot"></span>Hors ligne · données locales</span>`;
   } else {
     el.outerHTML = `<span id="api-status" class="status-pill is-offline"><span class="dot"></span>Hors ligne</span>`;
   }
@@ -804,6 +993,25 @@ function renderBanner() {
     slot.innerHTML = "";
     return;
   }
+  // Hors-ligne mais des données locales sont affichées : information non bloquante.
+  if (state.catalog.length) {
+    const srcLabel = state.dataSource === "cache" ? "votre dernière visite en ligne" : "snapshot embarqué";
+    const when = state.dataSavedAt ? ` du ${esc(fmtDate(state.dataSavedAt))}` : "";
+    slot.innerHTML = `
+      <div class="banner banner--info">
+        <span class="banner__icon">${I.warn}</span>
+        <div>
+          <div class="banner__title">Mode hors-ligne — données locales affichées</div>
+          <div class="banner__text">API <code>${esc(apiBase)}</code> injoignable. Catalogue issu du ${srcLabel}${when} ; les montants peuvent être périmés.</div>
+        </div>
+        <div class="banner__actions">
+          <button class="btn btn--sm" data-set-api>Changer l'URL</button>
+          <button class="btn btn--primary btn--sm" data-retry>Réessayer</button>
+        </div>
+      </div>`;
+    return;
+  }
+  // Aucune donnée disponible (ni cache, ni snapshot) : erreur franche.
   slot.innerHTML = `
     <div class="banner">
       <span class="banner__icon">${I.warn}</span>
@@ -826,8 +1034,27 @@ function renderSyncFoot() {
   const el = document.querySelector("#sync-foot");
   if (!el) return;
 
+  // Hors-ligne : on expose la source de repli (cache/snapshot) et sa fraîcheur.
+  if (!state.online) {
+    if (state.catalog.length) {
+      const srcLabel =
+        state.dataSource === "cache" ? "Cache navigateur (dernière visite)" : "Snapshot embarqué (livré avec l'app)";
+      const when = state.dataSavedAt ? ` · ${esc(fmtDate(state.dataSavedAt))}` : "";
+      el.innerHTML = `
+        <div class="sync__info">
+          <span class="sync__badge is-stale"><span class="dot"></span>Hors-ligne</span>
+          <span class="sync__src">${esc(srcLabel)}</span>
+          <span class="sync__meta">données locales${when}</span>
+        </div>
+        <button class="btn btn--ghost btn--sm" data-retry>Réessayer</button>`;
+    } else {
+      el.innerHTML = `<span class="sync__src">Source de données indisponible</span>`;
+    }
+    return;
+  }
+
   const sync = state.health?.sync || null;
-  if (!state.online || !sync) {
+  if (!sync) {
     el.innerHTML = `<span class="sync__src">Source de données indisponible</span>`;
     return;
   }
@@ -890,8 +1117,12 @@ function renderCatalog() {
     root.innerHTML = `<div class="loading-block"><div class="spinner"></div>Chargement du catalogue…</div>`;
     return;
   }
-  if (!state.online) {
-    root.innerHTML = `<div class="loading-block">Catalogue indisponible tant que l'API est hors ligne.</div>`;
+  // On affiche dès qu'un catalogue existe, quelle que soit sa source (live, cache
+  // navigateur ou snapshot embarqué) → plus jamais d'écran vide quand l'API est down.
+  if (!state.catalog.length) {
+    root.innerHTML = `<div class="loading-block">${
+      state.online ? "Aucun produit dans le catalogue." : "Catalogue indisponible : API hors ligne et aucune donnée locale."
+    }</div>`;
     return;
   }
 
@@ -1333,8 +1564,13 @@ function wireEvents() {
 }
 
 function onClick(e) {
-  const t = e.target.closest("[data-family-toggle],[data-toggle-all],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-sync],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close]");
+  const t = e.target.closest("[data-family-toggle],[data-toggle-all],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-sync],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close],[data-summary-size]");
   if (!t) return;
+
+  if (t.dataset.summarySize) {
+    applySummaryWidth(Number(t.dataset.summarySize));
+    return;
+  }
 
   if (t.dataset.quoteClose) {
     e.stopPropagation();
