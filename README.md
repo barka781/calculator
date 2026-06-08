@@ -64,6 +64,8 @@ Architecture (3 services) :
 - **`backend`** (FastAPI non-root) : l'API. Au démarrage, attend PostgreSQL puis ingère les
   YAML embarqués. Aucune de ces étapes ne bloque le service : en cas de base
   injoignable, l'API se replie automatiquement sur les YAML (disponibilité d'abord).
+  La synchronisation QuoteFlow est lancée au démarrage puis relancée toutes les
+  15 minutes par défaut (`CALCULATOR_SYNC_POLL_INTERVAL_SECONDS=900`).
 - **`database`** (PostgreSQL 16 Alpine) : la base, données persistées dans le volume `calculator_pgdata`.
   Aucun port PostgreSQL n'est publié sur l'hôte.
 
@@ -77,6 +79,12 @@ Arrêt / logs :
 docker compose logs -f          # suivre les journaux
 docker compose down             # arrêter (volume conservé)
 docker compose down -v          # arrêter et supprimer les données
+```
+
+Pour suspendre temporairement la synchronisation automatique :
+
+```bash
+CALCULATOR_SYNC_POLL_INTERVAL_SECONDS=0 docker compose up -d
 ```
 
 ## Backend seul

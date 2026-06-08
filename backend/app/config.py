@@ -70,6 +70,19 @@ def calculator_version() -> str:
     return "0.1.0"
 
 
+def sync_poll_interval_seconds() -> int:
+    """Intervalle de synchro automatique QuoteFlow -> calculator.
+
+    Défaut produit : 15 minutes. Mettre 0 pour désactiver le polling automatique
+    (utile en tests ou en maintenance).
+    """
+    raw = os.getenv("CALCULATOR_SYNC_POLL_INTERVAL_SECONDS", "900").strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 900
+
+
 def live_git_url() -> str | None:
     value = os.getenv("CALCULATOR_LIVE_GIT_URL")
     return value.strip() if value and value.strip() else None

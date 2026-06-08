@@ -36,6 +36,7 @@ def reset_caches_around_test():
         "CALCULATOR_LIVE_GIT_URL": os.environ.get("CALCULATOR_LIVE_GIT_URL"),
         "CALCULATOR_LIVE_GIT_REF": os.environ.get("CALCULATOR_LIVE_GIT_REF"),
         "CALCULATOR_LIVE_GIT_CACHE_DIR": os.environ.get("CALCULATOR_LIVE_GIT_CACHE_DIR"),
+        "CALCULATOR_SYNC_POLL_INTERVAL_SECONDS": os.environ.get("CALCULATOR_SYNC_POLL_INTERVAL_SECONDS"),
     }
     # La synchro porte sur les fichiers YAML : on épingle la source en lecture
     # sur YAML pour que les comptages reflètent le répertoire de données synchronisé.
@@ -131,6 +132,20 @@ items:
     assert changed["needs_sync"] is True
     assert changed["delta"]["modified"] == ["CATALOGS/cloud/compute.yaml"]
     assert changed["delta"]["removed"] == ["LICENCES/obsolete.md"]
+
+
+def test_sync_poll_interval_defaults_to_15_minutes(monkeypatch):
+    monkeypatch.delenv("CALCULATOR_SYNC_POLL_INTERVAL_SECONDS", raising=False)
+    assert config.sync_poll_interval_seconds() == 900
+
+    monkeypatch.setenv("CALCULATOR_SYNC_POLL_INTERVAL_SECONDS", "1800")
+    assert config.sync_poll_interval_seconds() == 1800
+
+    monkeypatch.setenv("CALCULATOR_SYNC_POLL_INTERVAL_SECONDS", "0")
+    assert config.sync_poll_interval_seconds() == 0
+
+    monkeypatch.setenv("CALCULATOR_SYNC_POLL_INTERVAL_SECONDS", "invalid")
+    assert config.sync_poll_interval_seconds() == 900
 
 
 def _git(repo: Path, *args: str) -> None:

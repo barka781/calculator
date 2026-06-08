@@ -57,6 +57,11 @@ Quand `CALCULATOR_LIVE_GIT_URL` est défini, `POST /api/sync/catalog` rafraîchi
 ce cache avant de valider et copier les YAML vers `backend/data`. Le paramètre
 `refresh=false` permet de recopier depuis le cache sans appel Git.
 
+Au démarrage de l'API, une synchronisation est lancée en tâche de fond, puis
+relancée automatiquement toutes les 15 minutes. L'intervalle se configure avec
+`CALCULATOR_SYNC_POLL_INTERVAL_SECONDS` (défaut `900`). Mettre `0` désactive le
+polling automatique, sans supprimer les endpoints manuels.
+
 ## État de l'extraction
 
 Le périmètre fiable du MVP est le flux catalogue + licences + panier/devis.

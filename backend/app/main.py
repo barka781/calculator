@@ -1,3 +1,5 @@
+import asyncio
+from contextlib import asynccontextmanager
 import urllib.parse
 from typing import Any, Optional
 
@@ -18,6 +20,7 @@ from .config import (
     licences_file,
     source_catalogs_dir,
     source_licences_dir,
+    sync_poll_interval_seconds,
 )
 from .export import render_quote
 from .licenses import find_license_item, load_license_items, search_licenses
@@ -28,10 +31,45 @@ from .sync import sync_summary
 from .sync import sync_status
 
 
+async def _run_periodic_sync(interval_seconds: int) -> None:
+    while True:
+        try:
+            await asyncio.to_thread(run_sync_catalog, True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[sync] Synchronisation automatique échouée: {exc!s}", flush=True)
+
+        try:
+            await asyncio.sleep(interval_seconds)
+        except asyncio.CancelledError:
+            raise
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    interval = sync_poll_interval_seconds()
+    task = None
+    if interval > 0:
+        print(f"[sync] Synchronisation automatique activée toutes les {interval} secondes.", flush=True)
+        task = asyncio.create_task(_run_periodic_sync(interval))
+    else:
+        print("[sync] Synchronisation automatique désactivée.", flush=True)
+
+    try:
+        yield
+    finally:
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+
 app = FastAPI(
     title="Cloud Temple Calculator API",
     version=calculator_version(),
     description="API publique du calculateur Cloud Temple, adossée à PostgreSQL (repli YAML si BDD indisponible).",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -61,6 +99,7 @@ def health() -> dict[str, Any]:
         "sync": {
             "is_synchronized": sync.get("is_synchronized"),
             "needs_sync": sync.get("needs_sync"),
+            "poll_interval_seconds": sync_poll_interval_seconds(),
             "source_available": sync.get("source_available"),
             "source": sync.get("source"),
             "last_sync": sync.get("last_sync"),

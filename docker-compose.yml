@@ -35,6 +35,8 @@ services:
       CALCULATOR_POSTGRES_PASSWORD: ${CALCULATOR_POSTGRES_PASSWORD:?Définir CALCULATOR_POSTGRES_PASSWORD dans .env ou l'environnement}
       CALCULATOR_POSTGRES_DB: ${CALCULATOR_POSTGRES_DB:-calculator}
       CALCULATOR_SOURCE: db
+      # 900 s = 15 min. Mettre 0 pour désactiver la synchro automatique.
+      CALCULATOR_SYNC_POLL_INTERVAL_SECONDS: ${CALCULATOR_SYNC_POLL_INTERVAL_SECONDS:-900}
     depends_on:
       database:
         condition: service_healthy

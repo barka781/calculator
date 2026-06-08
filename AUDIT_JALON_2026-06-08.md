@@ -15,13 +15,13 @@
 - `09b484f` — repli hors-ligne "plus jamais d'écran vide" + panneau financier redimensionnable.
 - `9350ea9` — stack Docker complète, version runtime, durcissements initiaux, tests frontend.
 - Branche `main` synchronisée avec `origin/main`.
-- Version applicative courante : `0.1.2` via le fichier `Version`.
+- Version applicative courante : `0.1.3` via le fichier `Version`.
 
 ### Validation réalisée
 
 - `docker compose up -d --build` OK avec `CALCULATOR_POSTGRES_PASSWORD=dev-change-me`.
 - Conteneurs `database`, `backend`, `frontend` healthy.
-- `GET /health` via `http://localhost:8088` OK, avec `version: "0.1.2"`.
+- `GET /health` via `http://localhost:8088` OK, avec `version: "0.1.3"`.
 - `GET /Version` OK.
 - `GET /api/catalog?limit=1` OK.
 - `GET /config.js` OK, same-origin.
@@ -102,7 +102,7 @@
 ### À surveiller
 
 - La source live QuoteFlow n'est pas encore branchée en conteneur : `source_available: false` est normal pour l'instant.
-- Prochaine cible produit : API QuoteFlow -> calculator, sync au démarrage puis polling toutes les 15 minutes.
+- Prochaine cible produit : API QuoteFlow -> calculator. Intervalle retenu pour l'instant : sync au démarrage puis polling toutes les 15 minutes (`900` secondes).
 - Le bouton manuel de synchronisation devra être retiré/masqué du parcours public cible.
 
 ---
@@ -136,13 +136,14 @@
 ### Validation
 
 - `CALCULATOR_POSTGRES_PASSWORD=dev-change-me docker compose config` OK.
+- `CALCULATOR_SYNC_POLL_INTERVAL_SECONDS=900` configure le polling automatique toutes les 15 minutes.
 - `CALCULATOR_POSTGRES_PASSWORD=dev-change-me docker compose up -d --build` OK.
 - `docker compose ps` :
   - `calculator-database` healthy,
   - `calculator-backend` healthy,
   - `calculator-frontend` healthy.
 - `curl http://localhost:8088/health` OK.
-- `curl http://localhost:8088/Version` -> `0.1.2`.
+- `curl http://localhost:8088/Version` -> `0.1.3`.
 - `curl -I http://localhost:8088/src/snapshot.json` -> 200 + headers sécurité.
 
 ### À surveiller
