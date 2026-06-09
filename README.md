@@ -25,8 +25,9 @@ l'authentification QuoteFlow.
 ## Version
 
 La version courante est stockée dans `Version`. Elle est aussi exposée par
-`GET /health` et copiée dans les images Docker. À chaque fin de session de
-travail, bumper ce fichier (et garder `package.json` aligné quand il change).
+`GET /health`, copiée dans les images Docker et affichée dans le pied de page du
+frontend. À chaque fin de session de travail, bumper ce fichier (et garder
+`package.json` aligné quand il change).
 
 ## Lancement local
 

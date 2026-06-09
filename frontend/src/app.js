@@ -12,6 +12,7 @@ let apiBase =
 
 const PAGE_SIZE = 50;
 const PERIODS = [1, 12, 24, 36, 48, 60];
+const APP_VERSION_URL = "./Version";
 
 /* ---------- Repli « plus jamais d'écran vide » ----------
    Deux filets sous l'API live :
@@ -132,6 +133,7 @@ const state = {
   dataSource: "live", // "live" | "cache" | "embedded"
   dataStale: false, // true quand on sert un repli (API injoignable)
   dataSavedAt: "", // horodatage de la donnée de repli affichée
+  appVersion: "",
   catalog: [],
   catalogByFamily: new Map(),
   search: "",
@@ -456,6 +458,17 @@ const termLabel = (t) => {
 };
 
 /* ---------- Données ---------- */
+
+async function loadAppVersion() {
+  try {
+    const res = await fetch(APP_VERSION_URL, { cache: "no-store", headers: { accept: "text/plain" } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    state.appVersion = (await res.text()).trim();
+  } catch {
+    state.appVersion = "";
+  }
+  renderSyncFoot();
+}
 
 // Mémorise les données live fraîches (health + catalogue) pour le prochain
 // démarrage hors-ligne. Volontairement SANS les licences (trop volumineuses pour
@@ -1089,6 +1102,8 @@ function renderBanner() {
 function renderSyncFoot() {
   const el = document.querySelector("#sync-foot");
   if (!el) return;
+  const appVersion = state.appVersion || state.health?.version || "";
+  const version = appVersion ? `<span class="sync__version">v${esc(appVersion)}</span>` : "";
 
   // Hors-ligne : on expose la source de repli (cache/snapshot) et sa fraîcheur.
   if (state.dataStale || !state.online) {
@@ -1101,17 +1116,18 @@ function renderSyncFoot() {
           <span class="sync__badge is-stale"><span class="dot"></span>Hors-ligne</span>
           <span class="sync__src">${esc(srcLabel)}</span>
           <span class="sync__meta">données locales${when}</span>
+          ${version}
         </div>
         <button class="btn btn--ghost btn--sm" data-retry>Réessayer</button>`;
     } else {
-      el.innerHTML = `<span class="sync__src">Source de données indisponible</span>`;
+      el.innerHTML = `<div class="sync__info"><span class="sync__src">Source de données indisponible</span>${version}</div>`;
     }
     return;
   }
 
   const sync = state.health?.sync || null;
   if (!sync) {
-    el.innerHTML = `<span class="sync__src">Source de données indisponible</span>`;
+    el.innerHTML = `<div class="sync__info"><span class="sync__src">Source de données indisponible</span>${version}</div>`;
     return;
   }
 
@@ -1145,6 +1161,7 @@ function renderSyncFoot() {
       <span class="sync__badge ${badgeCls}"><span class="dot"></span>${esc(badgeLabel)}</span>
       <span class="sync__src">${esc(srcLabel)}</span>
       <span class="sync__meta">${parts.join(" · ")}${repo ? ` · <span class="sync__repo">${esc(repo)}</span>` : ""}</span>
+      ${version}
       ${err}
     </div>
     <button class="btn btn--ghost btn--sm" data-sync ${state.syncing ? "disabled" : ""}>${
@@ -1929,4 +1946,5 @@ function onChange(e) {
 /* ---------- Boot ---------- */
 mount();
 render();
+loadAppVersion();
 loadAll();
