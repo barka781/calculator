@@ -423,6 +423,7 @@ def _write_last_sync_manifest(
     source_files: list[RuntimeFile],
     validation: dict[str, Any],
     source: dict[str, Any],
+    ingest: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     manifest = _manifest(source_files)
     payload = {
@@ -432,6 +433,10 @@ def _write_last_sync_manifest(
         "file_count": len(source_files),
         "source_checksum": _aggregate_checksum(manifest, "source_checksum"),
         "validation": validation,
+        # Résultat de la réingestion BDD (skipped/success/error) PERSISTÉ pour
+        # rendre observable un repli silencieux : remonte via /health et
+        # /api/sync/status (supervision ANSSI).
+        "ingest": ingest,
         "source": source,
     }
     path = _sync_manifest_path()
@@ -582,7 +587,7 @@ def sync_catalog(refresh: bool = True) -> dict[str, Any]:
     finally:
         load_catalog_items.cache_clear()
         load_license_items.cache_clear()
-    last_sync = _write_last_sync_manifest(source_files, validation, source)
+    last_sync = _write_last_sync_manifest(source_files, validation, source, ingest_result)
     after = sync_status()
 
     return {

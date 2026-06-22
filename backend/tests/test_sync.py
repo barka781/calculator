@@ -433,6 +433,9 @@ def test_sync_catalog_db_mode_reingests_before_cache_clear(tmp_path, monkeypatch
     assert result["ingest"]["provider"] == "local_yaml"
     # Invariant : réingestion AVANT invalidation des caches.
     assert order == ["ingest", "clear_catalog", "clear_license"]
+    # Issue de réingestion PERSISTÉE dans le manifeste -> observable via /health.
+    assert result["last_sync"]["ingest"]["status"] == "success"
+    assert result["last_sync"]["ingest"]["provider"] == "local_yaml"
 
 
 def test_sync_catalog_db_mode_resilient_when_reingest_fails(tmp_path, monkeypatch):
@@ -482,3 +485,5 @@ def test_sync_catalog_db_mode_resilient_when_reingest_fails(tmp_path, monkeypatc
     assert result["ingest"]["status"] == "error"  # l'échec est exposé, pas propagé
     assert "injoignable" in result["ingest"]["error"]
     assert cleared == ["catalog", "license"]       # caches invalidés MALGRÉ l'échec
+    # L'échec est PERSISTÉ -> un repli silencieux devient visible en supervision.
+    assert result["last_sync"]["ingest"]["status"] == "error"
