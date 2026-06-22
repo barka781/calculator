@@ -9,6 +9,7 @@ import re
 import yaml
 
 from .config import catalogs_dir, data_source
+from .ingest import first_present_price
 
 
 logger = logging.getLogger(__name__)
@@ -78,19 +79,10 @@ def _sub_type(raw_type: Any) -> str:
 
 def enrich_pricing(item: dict[str, Any]) -> dict[str, Any]:
     pricing = item.get("pricing") or {}
-    # Premier champ de prix PRÉSENT (et non « premier truthy ») : un prix 0
-    # (offre gratuite — ex. activation VPC) est valide et ne doit pas « tomber »
-    # sur le champ suivant. Aligné sur ingest.normalize_product_item pour éviter
-    # une divergence entre prix stocké (BDD) et prix servi (ce chemin alimente
-    # pricing_summary, consommé par le calcul de devis).
-    raw_price: Any = None
-    if isinstance(pricing, dict):
-        for _price_key in ("public_price", "unit_price", "price", "monthly_price"):
-            candidate = pricing.get(_price_key)
-            if candidate is not None:
-                raw_price = candidate
-                break
-    public_price = _safe_float(raw_price)
+    # Résolution du prix partagée avec l'ingestion (ingest.first_present_price)
+    # pour garantir « prix servi == prix ingéré ». Le `_safe_float` local conserve
+    # le repli 0.0 (vs None côté ingestion) — divergence assumée pour le non-numérique.
+    public_price = _safe_float(first_present_price(pricing))
     discounts = pricing.get("discounts") if isinstance(pricing, dict) else {}
     discount_percent = _safe_float(discounts.get("standard") if isinstance(discounts, dict) else 0)
     discounted_price = public_price * (1 - discount_percent / 100)

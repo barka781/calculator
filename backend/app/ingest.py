@@ -65,6 +65,32 @@ def _items(data: dict[str, Any]) -> list[dict[str, Any]]:
     return [it for it in _raw_items(data) if isinstance(it, dict)]
 
 
+# Ordre de repli des champs de prix.
+_PRICE_FIELDS = ("public_price", "unit_price", "price", "monthly_price")
+
+
+def first_present_price(pricing: Any) -> Any:
+    """Premier champ de prix PRÉSENT (`is not None`) parmi `_PRICE_FIELDS`, brut.
+
+    « Premier présent » et non « premier truthy » : un prix 0 (offre gratuite —
+    ex. activation VPC, Private Backbone) est une valeur valide et ne doit pas
+    faire « tomber » la résolution sur le champ suivant comme le ferait un `or`.
+
+    Partagé entre le chemin d'INGESTION (`normalize_product_item` -> colonne BDD)
+    et le chemin de SERVICE (`catalog.enrich_pricing` -> prix servi/devis) pour
+    éviter toute divergence de résolution. Chaque appelant applique ENSUITE son
+    propre `_safe_float` : la conversion d'un prix NON numérique diverge
+    volontairement (None côté ingestion = « inconnu », 0.0 côté service = repli).
+    """
+    if not isinstance(pricing, dict):
+        return None
+    for key in _PRICE_FIELDS:
+        candidate = pricing.get(key)
+        if candidate is not None:
+            return candidate
+    return None
+
+
 # --------------------------------------------------------------------------- #
 # Construction des lignes
 # --------------------------------------------------------------------------- #
@@ -85,18 +111,8 @@ def normalize_product_item(
     """
     pricing = item.get("pricing") or {}
     discounts = pricing.get("discounts") if isinstance(pricing, dict) else {}
-    # Premier champ de prix PRÉSENT (et non « premier truthy ») : un prix 0
-    # (offre gratuite — ex. activation VPC, Private Backbone) est une valeur
-    # valide et ne doit PAS faire « tomber » la résolution sur le champ suivant,
-    # comme le ferait un `or` qui traite 0 comme absent.
-    raw_price: Any = None
-    if isinstance(pricing, dict):
-        for _price_key in ("public_price", "unit_price", "price", "monthly_price"):
-            candidate = pricing.get(_price_key)
-            if candidate is not None:
-                raw_price = candidate
-                break
-    public_price = _safe_float(raw_price)
+    # Résolution partagée avec le chemin de service (catalog.enrich_pricing).
+    public_price = _safe_float(first_present_price(pricing))
     return {
         "sku": str(item.get("sku") or f"{catalog}:{type_fallback}:{item.get('name')}"),
         "name": str(item.get("name") or item.get("title") or "Sans nom"),
