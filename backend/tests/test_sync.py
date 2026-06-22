@@ -94,6 +94,8 @@ items:
     assert result["status"] == "success"
     assert result["catalog_items"] == 1
     assert result["license_items"] == 1
+    # #4 — la sync câble la réingestion BDD ; en mode YAML (fixture) elle est skippée.
+    assert result["ingest"]["status"] == "skipped"
     assert result["last_sync"]["kind"] == "local_quoteflow"
     assert result["last_sync"]["source"]["git"]["available"] is False
 
@@ -328,3 +330,155 @@ def test_redact_url_masks_credentials():
     assert _redact_url("https://gitlab.internal/quoteflow.git") == "https://gitlab.internal/quoteflow.git"
     assert _redact_url(None) is None
     assert _redact_url("") == ""
+
+
+# --------------------------------------------------------------------------- #
+# #4 — Réingestion BDD dans le cycle de sync (source live « définitive »)
+# --------------------------------------------------------------------------- #
+def test_reingest_db_skipped_in_yaml_mode(monkeypatch):
+    """En mode YAML, pas de réingestion BDD : la copie de fichiers suffit."""
+    import app.ingest as ingest
+    from app import sync
+
+    calls = {"n": 0}
+    monkeypatch.setattr(sync, "data_source", lambda: "yaml")
+    monkeypatch.setattr(ingest, "run", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1))
+
+    result = sync._reingest_db_if_needed()
+    assert result["status"] == "skipped"
+    assert calls["n"] == 0  # ingest.run() NE doit PAS être appelé
+
+
+def test_reingest_db_runs_ingest_in_db_mode(monkeypatch):
+    """En mode BDD, le cycle de sync repeuple la BDD via `ingest.run()`.
+
+    Sans cette étape, le polling rafraîchirait les YAML mais les données servies
+    (lues en BDD) resteraient figées à l'ingestion de démarrage (bug #4)."""
+    import app.ingest as ingest
+    from app import sync
+
+    monkeypatch.setattr(sync, "data_source", lambda: "db")
+    monkeypatch.setattr(
+        ingest, "run", lambda *a, **k: {"products": 7, "licenses": 3, "provider": "quoteflow_api"}
+    )
+
+    result = sync._reingest_db_if_needed()
+    assert result["status"] == "success"
+    assert result["products"] == 7
+    assert result["provider"] == "quoteflow_api"
+
+
+def test_reingest_db_is_resilient_to_failure(monkeypatch):
+    """Un échec de réingestion (BDD injoignable) ne PROPAGE pas : statut 'error',
+    la synchro et la boucle de polling continuent (priorité disponibilité ANSSI)."""
+    import app.ingest as ingest
+    from app import sync
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("BDD injoignable")
+
+    monkeypatch.setattr(sync, "data_source", lambda: "db")
+    monkeypatch.setattr(ingest, "run", boom)
+
+    result = sync._reingest_db_if_needed()  # ne doit PAS lever
+    assert result["status"] == "error"
+    assert "injoignable" in result["error"]
+
+
+def test_sync_catalog_db_mode_reingests_before_cache_clear(tmp_path, monkeypatch):
+    """#4 (intégration) — en mode BDD, sync_catalog repeuple la BDD via ingest.run()
+    PUIS invalide le cache. L'ORDRE est l'invariant central du fix : invalider le
+    cache AVANT la réingestion le repeuplerait avec l'ancienne BDD, et la donnée
+    fraîche ne serait jamais servie (le bug #4). Ce test verrouille cet ordre."""
+    import app.ingest as ingest
+    from app import sync
+
+    source = tmp_path / "quoteflow"
+    target = tmp_path / "calculator-data"
+    monkeypatch.setenv("CALCULATOR_QUOTEFLOW_ROOT", str(source))
+    monkeypatch.setenv("CALCULATOR_DATA_DIR", str(target))
+    _reset_caches()
+    _write(
+        source / "CATALOGS/cloud/compute.yaml",
+        "metadata:\n  category: cloud\nitems:\n  - sku: x\n    name: X\n    pricing:\n      public_price: 1\n",
+    )
+    _write(
+        source / "LICENCES/licences.yaml",
+        "items:\n  - sku: L\n    name: L\n    vendor: V\n    pricing:\n      public_price: 1\n",
+    )
+    _write(source / "LICENCES/templates/licences_schema.json", "{}")
+
+    order: list[str] = []
+
+    def make_loader(name):
+        def loader():
+            return []
+        loader.cache_clear = lambda: order.append(f"clear_{name}")
+        return loader
+
+    monkeypatch.setattr(sync, "data_source", lambda: "db")
+    monkeypatch.setattr(sync, "load_catalog_items", make_loader("catalog"))
+    monkeypatch.setattr(sync, "load_license_items", make_loader("license"))
+
+    def fake_ingest(*args, **kwargs):
+        order.append("ingest")
+        return {"products": 1, "licenses": 1, "provider": "local_yaml"}
+
+    monkeypatch.setattr(ingest, "run", fake_ingest)
+
+    result = sync.sync_catalog()
+
+    assert result["status"] == "success"
+    assert result["ingest"]["status"] == "success"  # chemin db-mode réellement exercé
+    assert result["ingest"]["provider"] == "local_yaml"
+    # Invariant : réingestion AVANT invalidation des caches.
+    assert order == ["ingest", "clear_catalog", "clear_license"]
+
+
+def test_sync_catalog_db_mode_resilient_when_reingest_fails(tmp_path, monkeypatch):
+    """#4 (intégration, résilience) — si `ingest.run()` LÈVE en mode BDD,
+    `sync_catalog` NE PROPAGE PAS (status success), expose `ingest.status == error`,
+    et invalide QUAND MÊME les caches (bloc finally). Sinon une panne BDD figerait
+    le service ET casserait la boucle de polling (priorité disponibilité ANSSI)."""
+    import app.ingest as ingest
+    from app import sync
+
+    source = tmp_path / "quoteflow"
+    target = tmp_path / "calculator-data"
+    monkeypatch.setenv("CALCULATOR_QUOTEFLOW_ROOT", str(source))
+    monkeypatch.setenv("CALCULATOR_DATA_DIR", str(target))
+    _reset_caches()
+    _write(
+        source / "CATALOGS/cloud/compute.yaml",
+        "metadata:\n  category: cloud\nitems:\n  - sku: x\n    name: X\n    pricing:\n      public_price: 1\n",
+    )
+    _write(
+        source / "LICENCES/licences.yaml",
+        "items:\n  - sku: L\n    name: L\n    vendor: V\n    pricing:\n      public_price: 1\n",
+    )
+    _write(source / "LICENCES/templates/licences_schema.json", "{}")
+
+    cleared: list[str] = []
+
+    def make_loader(name):
+        def loader():
+            return []
+
+        loader.cache_clear = lambda: cleared.append(name)
+        return loader
+
+    monkeypatch.setattr(sync, "data_source", lambda: "db")
+    monkeypatch.setattr(sync, "load_catalog_items", make_loader("catalog"))
+    monkeypatch.setattr(sync, "load_license_items", make_loader("license"))
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("BDD injoignable")
+
+    monkeypatch.setattr(ingest, "run", boom)
+
+    result = sync.sync_catalog()
+
+    assert result["status"] == "success"          # la synchro globale tient
+    assert result["ingest"]["status"] == "error"  # l'échec est exposé, pas propagé
+    assert "injoignable" in result["ingest"]["error"]
+    assert cleared == ["catalog", "license"]       # caches invalidés MALGRÉ l'échec

@@ -47,16 +47,109 @@ def _load_yaml(path: Path) -> dict[str, Any]:
         return yaml.safe_load(handle) or {}
 
 
-def _items(data: dict[str, Any]) -> list[dict[str, Any]]:
+def _raw_items(data: dict[str, Any]) -> list[Any]:
+    """Liste BRUTE d'items d'une enveloppe JSON (sans filtrage des non-dicts).
+
+    Sert à la pagination de la source live : la longueur d'une page doit refléter
+    ce que le serveur a réellement renvoyé, AVANT tout filtrage — sinon un item
+    parasite ferait passer une page pleine pour une « page courte » et
+    tronquerait silencieusement la collecte (cf. `QuoteflowApiProvider._fetch_all`).
+    """
     raw = data.get("items") or data.get("products") or data.get("licenses")
     if raw is None and isinstance(data.get("catalog"), dict):
         raw = data["catalog"].get("products")
-    return [it for it in raw if isinstance(it, dict)] if isinstance(raw, list) else []
+    return raw if isinstance(raw, list) else []
+
+
+def _items(data: dict[str, Any]) -> list[dict[str, Any]]:
+    return [it for it in _raw_items(data) if isinstance(it, dict)]
 
 
 # --------------------------------------------------------------------------- #
 # Construction des lignes
 # --------------------------------------------------------------------------- #
+def normalize_product_item(
+    item: dict[str, Any],
+    *,
+    catalog: str,
+    default_category: str,
+    type_fallback: str,
+    source_file: Optional[str] = None,
+    catalog_version: Optional[str] = None,
+) -> dict[str, Any]:
+    """Normalise UN item produit (brut, façon YAML) vers le contrat pivot.
+
+    Partagé entre `LocalYamlProvider` (lecture fichiers) et `QuoteflowApiProvider`
+    (lecture API) pour garantir un mapping identique (évite la divergence de
+    parsing). Voir le contrat dans `CatalogProvider`.
+    """
+    pricing = item.get("pricing") or {}
+    discounts = pricing.get("discounts") if isinstance(pricing, dict) else {}
+    # Premier champ de prix PRÉSENT (et non « premier truthy ») : un prix 0
+    # (offre gratuite — ex. activation VPC, Private Backbone) est une valeur
+    # valide et ne doit PAS faire « tomber » la résolution sur le champ suivant,
+    # comme le ferait un `or` qui traite 0 comme absent.
+    raw_price: Any = None
+    if isinstance(pricing, dict):
+        for _price_key in ("public_price", "unit_price", "price", "monthly_price"):
+            candidate = pricing.get(_price_key)
+            if candidate is not None:
+                raw_price = candidate
+                break
+    public_price = _safe_float(raw_price)
+    return {
+        "sku": str(item.get("sku") or f"{catalog}:{type_fallback}:{item.get('name')}"),
+        "name": str(item.get("name") or item.get("title") or "Sans nom"),
+        "description": item.get("description"),
+        "catalog": catalog,
+        "category": str(item.get("category") or default_category),
+        "type": str(item.get("type") or type_fallback),
+        "sub_type": item.get("sub_type"),
+        "unit": item.get("unit"),
+        "status": item.get("status") or (item.get("metadata") or {}).get("status"),
+        "public_price": public_price,
+        "discount_standard": _safe_float(
+            discounts.get("standard") if isinstance(discounts, dict) else None
+        ),
+        "engagement": (str(pricing.get("engagement")) if pricing.get("engagement") is not None else None),
+        "base_quantity": _safe_float(item.get("base_quantity") or pricing.get("base_quantity")),
+        "min_quantity": _safe_float(pricing.get("min_quantity") or item.get("min_quantity")),
+        "pricing": pricing or {},
+        "specs": item.get("specs") or {},
+        "item_metadata": item.get("metadata") or {},
+        "source_file": source_file,
+        "catalog_version": catalog_version,
+    }
+
+
+def normalize_license_item(item: dict[str, Any]) -> dict[str, Any]:
+    """Normalise UN item licence (brut, façon YAML) vers le contrat pivot.
+
+    Partagé entre `LocalYamlProvider` et `QuoteflowApiProvider`.
+    """
+    pricing = item.get("pricing") or {}
+    meta = item.get("metadata") or {}
+    engagement = pricing.get("engagement")
+    return {
+        "sku": str(item.get("sku") or "").strip(),
+        "name": str(item.get("name") or "Sans nom"),
+        "description": item.get("description"),
+        "vendor": item.get("vendor"),
+        "edition": item.get("edition"),
+        "category": item.get("category") or "licence",
+        "type": item.get("type"),
+        "unit": item.get("unit"),
+        "public_price": _safe_float(pricing.get("public_price")),
+        "purchase_price": _safe_float(pricing.get("purchase_price")),
+        "currency": pricing.get("currency"),
+        "term": pricing.get("term"),
+        "engagement": str(engagement) if engagement is not None else None,
+        "validity_end": meta.get("validity_end"),
+        "pricing": pricing or {},
+        "item_metadata": meta or {},
+    }
+
+
 def _product_rows() -> Iterable[dict[str, Any]]:
     root = catalogs_dir()
     for catalog in ("cloud", "services"):
@@ -69,38 +162,17 @@ def _product_rows() -> Iterable[dict[str, Any]]:
             version = data.get("version")
             default_category = str(meta.get("category") or catalog)
             type_fallback = yaml_file.stem
+            source_file = str(yaml_file.relative_to(root))
+            catalog_version = str(version) if version is not None else None
             for item in _items(data):
-                pricing = item.get("pricing") or {}
-                discounts = pricing.get("discounts") if isinstance(pricing, dict) else {}
-                public_price = _safe_float(
-                    pricing.get("public_price")
-                    or pricing.get("unit_price")
-                    or pricing.get("price")
-                    or pricing.get("monthly_price")
+                yield normalize_product_item(
+                    item,
+                    catalog=catalog,
+                    default_category=default_category,
+                    type_fallback=type_fallback,
+                    source_file=source_file,
+                    catalog_version=catalog_version,
                 )
-                yield {
-                    "sku": str(item.get("sku") or f"{catalog}:{yaml_file.stem}:{item.get('name')}"),
-                    "name": str(item.get("name") or item.get("title") or "Sans nom"),
-                    "description": item.get("description"),
-                    "catalog": catalog,
-                    "category": str(item.get("category") or default_category),
-                    "type": str(item.get("type") or type_fallback),
-                    "sub_type": item.get("sub_type"),
-                    "unit": item.get("unit"),
-                    "status": item.get("status") or (item.get("metadata") or {}).get("status"),
-                    "public_price": public_price,
-                    "discount_standard": _safe_float(
-                        discounts.get("standard") if isinstance(discounts, dict) else None
-                    ),
-                    "engagement": (str(pricing.get("engagement")) if pricing.get("engagement") is not None else None),
-                    "base_quantity": _safe_float(item.get("base_quantity") or pricing.get("base_quantity")),
-                    "min_quantity": _safe_float(pricing.get("min_quantity") or item.get("min_quantity")),
-                    "pricing": pricing or {},
-                    "specs": item.get("specs") or {},
-                    "item_metadata": item.get("metadata") or {},
-                    "source_file": str(yaml_file.relative_to(root)),
-                    "catalog_version": str(version) if version is not None else None,
-                }
 
 
 def _license_rows() -> Iterable[dict[str, Any]]:
@@ -109,27 +181,7 @@ def _license_rows() -> Iterable[dict[str, Any]]:
         return
     data = _load_yaml(path)
     for item in _items(data):
-        pricing = item.get("pricing") or {}
-        meta = item.get("metadata") or {}
-        engagement = pricing.get("engagement")
-        yield {
-            "sku": str(item.get("sku") or "").strip(),
-            "name": str(item.get("name") or "Sans nom"),
-            "description": item.get("description"),
-            "vendor": item.get("vendor"),
-            "edition": item.get("edition"),
-            "category": item.get("category") or "licence",
-            "type": item.get("type"),
-            "unit": item.get("unit"),
-            "public_price": _safe_float(pricing.get("public_price")),
-            "purchase_price": _safe_float(pricing.get("purchase_price")),
-            "currency": pricing.get("currency"),
-            "term": pricing.get("term"),
-            "engagement": str(engagement) if engagement is not None else None,
-            "validity_end": meta.get("validity_end"),
-            "pricing": pricing or {},
-            "item_metadata": meta or {},
-        }
+        yield normalize_license_item(item)
 
 
 # --------------------------------------------------------------------------- #
@@ -209,14 +261,54 @@ def _upsert(session, model, rows: list[dict[str, Any]], batch_size: int = 1000) 
     return total
 
 
+def default_provider() -> CatalogProvider:
+    """Provider d'acquisition par défaut.
+
+    Source live « définitive » : l'API QuoteFlow si elle est configurée
+    (`CALCULATOR_QUOTEFLOW_API_URL`), sinon repli sur les YAML locaux.
+    Import local de `QuoteflowApiProvider` pour éviter un import circulaire
+    (le provider API importe les normaliseurs de ce module).
+    """
+    from .config import quoteflow_api_enabled
+
+    if quoteflow_api_enabled():
+        from .quoteflow_api import QuoteflowApiProvider
+
+        return QuoteflowApiProvider()
+    return LocalYamlProvider()
+
+
 def run(provider: Optional[CatalogProvider] = None) -> dict[str, Any]:
-    """Ingère les données fournies par `provider` (défaut : LocalYamlProvider)."""
-    provider = provider or LocalYamlProvider()
+    """Ingère les données fournies par `provider` (défaut : `default_provider()`).
+
+    Résilience : si la source live (API QuoteFlow) échoue — y compris à la
+    CONSTRUCTION du provider (URL invalide) ou pendant l'acquisition — on retombe
+    sur les YAML locaux plutôt que de laisser l'ingestion planter (priorité
+    disponibilité). L'absence d'URL d'API est déjà gérée par `default_provider()`.
+    """
     init_db()
+    try:
+        active = provider or default_provider()
+        products = list(active.products())
+        licenses = list(active.licenses())
+    except Exception as exc:  # noqa: BLE001
+        from .quoteflow_api import QuoteflowApiError
+
+        if not isinstance(exc, QuoteflowApiError):
+            raise
+        print(
+            f"[ingest] Source live QuoteFlow indisponible ({exc!s}) ; "
+            "repli sur les YAML locaux.",
+            flush=True,
+        )
+        active = LocalYamlProvider()
+        products = list(active.products())
+        licenses = list(active.licenses())
+
     with session_scope() as session:
-        n_products = _upsert(session, Product, list(provider.products()))
-        n_licenses = _upsert(session, License, list(provider.licenses()))
-    return {"products": n_products, "licenses": n_licenses, "provider": provider.name}
+        n_products = _upsert(session, Product, products)
+        n_licenses = _upsert(session, License, licenses)
+    return {"products": n_products, "licenses": n_licenses, "provider": active.name}
 
 
 def main() -> None:

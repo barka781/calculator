@@ -144,3 +144,69 @@ def source_licences_dir() -> Path:
     if configured:
         return Path(configured).expanduser().resolve()
     return source_root() / "LICENCES"
+
+
+# --------------------------------------------------------------------------- #
+# Liaison API QuoteFlow (source live « définitive »)
+#
+# PRÉPARATION : la tuyauterie HTTP est prête. L'URL réelle et le format exact
+# de l'API QuoteFlow restent à confirmer — d'où des défauts paramétrables et
+# une liaison DÉSACTIVÉE tant que CALCULATOR_QUOTEFLOW_API_URL n'est pas définie
+# (repli automatique sur la source fichiers/git existante).
+# --------------------------------------------------------------------------- #
+def quoteflow_api_url() -> str | None:
+    """URL de base de l'API REST QuoteFlow (ex : https://quoteflow.example).
+
+    Non définie -> liaison API désactivée (repli sur la source fichiers/git).
+    """
+    value = os.getenv("CALCULATOR_QUOTEFLOW_API_URL")
+    return value.strip().rstrip("/") if value and value.strip() else None
+
+
+def quoteflow_api_enabled() -> bool:
+    """True si une URL d'API QuoteFlow est configurée."""
+    return quoteflow_api_url() is not None
+
+
+def quoteflow_api_token() -> str | None:
+    """Jeton Bearer optionnel pour l'API QuoteFlow."""
+    value = os.getenv("CALCULATOR_QUOTEFLOW_API_TOKEN")
+    return value.strip() if value and value.strip() else None
+
+
+def quoteflow_api_timeout_seconds() -> float:
+    """Timeout HTTP par requête vers l'API QuoteFlow (défaut 20 s)."""
+    raw = os.getenv("CALCULATOR_QUOTEFLOW_API_TIMEOUT_SECONDS", "20").strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return 20.0
+    return value if value > 0 else 20.0
+
+
+def quoteflow_api_page_size() -> int:
+    """Taille de page pour la pagination des listes (défaut 500)."""
+    raw = os.getenv("CALCULATOR_QUOTEFLOW_API_PAGE_SIZE", "500").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return 500
+    return value if value > 0 else 500
+
+
+def quoteflow_api_products_path() -> str:
+    """Chemin de l'endpoint catalogue côté API QuoteFlow.
+
+    TODO(API réelle) : confirmer le chemin exact (cf. routers QuoteFlow).
+    """
+    raw = os.getenv("CALCULATOR_QUOTEFLOW_API_PRODUCTS_PATH", "/api/catalog").strip()
+    return raw or "/api/catalog"
+
+
+def quoteflow_api_licenses_path() -> str:
+    """Chemin de l'endpoint licences côté API QuoteFlow.
+
+    TODO(API réelle) : confirmer le chemin exact (cf. routers QuoteFlow).
+    """
+    raw = os.getenv("CALCULATOR_QUOTEFLOW_API_LICENSES_PATH", "/api/licenses").strip()
+    return raw or "/api/licenses"

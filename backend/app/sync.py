@@ -16,6 +16,7 @@ from .catalog import load_catalog_items
 from .config import (
     catalogs_dir,
     data_root,
+    data_source,
     licences_file,
     live_git_cache_dir,
     live_git_enabled,
@@ -526,6 +527,34 @@ def sync_summary() -> dict[str, Any]:
     }
 
 
+def _reingest_db_if_needed() -> dict[str, Any] | None:
+    """Repeuple la BDD depuis le provider live quand on sert depuis la BDD.
+
+    Source live « définitive » : `ingest.run()` lit le provider par défaut — l'API
+    QuoteFlow si `CALCULATOR_QUOTEFLOW_API_URL` est configurée, sinon les YAML
+    locaux fraîchement matérialisés par `sync_catalog` — et met à jour la BDD.
+    C'est ce qui rend le cycle de synchronisation (démarrage + polling 15 min)
+    EFFECTIF quand `data_source() == "db"` : sans cette étape, le polling rafraîchit
+    les YAML mais les données servies (lues en BDD) resteraient figées à
+    l'ingestion de démarrage.
+
+    En mode YAML, no-op : la copie de fichiers de `sync_catalog` suffit.
+
+    Résilient (priorité disponibilité ANSSI) : un échec de réingestion (BDD
+    injoignable, etc.) ne casse ni la synchro ni la boucle de polling — les
+    loaders se replient sur les YAML. On renvoie un statut au lieu de propager.
+    """
+    if data_source() != "db":
+        return {"status": "skipped", "reason": "data_source != db"}
+    try:
+        from .ingest import run as ingest_run
+
+        result = ingest_run()
+        return {"status": "success", **result}
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "error": str(exc)}
+
+
 def sync_catalog(refresh: bool = True) -> dict[str, Any]:
     refresh_result = refresh_live_source() if refresh else {"status": "skipped", "reason": "refresh disabled"}
     validation = {"catalogs": _validate_catalogs(), "licences": _validate_licences()}
@@ -544,8 +573,15 @@ def sync_catalog(refresh: bool = True) -> dict[str, Any]:
     for path in target_extra.values():
         path.unlink()
 
-    load_catalog_items.cache_clear()
-    load_license_items.cache_clear()
+    # Source live « définitive » : en mode BDD, repeupler la BDD depuis le provider
+    # (API QuoteFlow si configurée, sinon les YAML qu'on vient de matérialiser)
+    # AVANT d'invalider le cache, afin que le cycle de sync rafraîchisse réellement
+    # les données servies (data_source=db). En mode YAML, la copie ci-dessus suffit.
+    try:
+        ingest_result = _reingest_db_if_needed()
+    finally:
+        load_catalog_items.cache_clear()
+        load_license_items.cache_clear()
     last_sync = _write_last_sync_manifest(source_files, validation, source)
     after = sync_status()
 
@@ -554,6 +590,7 @@ def sync_catalog(refresh: bool = True) -> dict[str, Any]:
         "message": "Catalogue et licences synchronises depuis QuoteFlow.",
         "refresh": refresh_result,
         "validation": validation,
+        "ingest": ingest_result,
         "before": before,
         "after": after,
         "last_sync": last_sync,
