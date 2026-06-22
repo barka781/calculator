@@ -78,12 +78,19 @@ def _sub_type(raw_type: Any) -> str:
 
 def enrich_pricing(item: dict[str, Any]) -> dict[str, Any]:
     pricing = item.get("pricing") or {}
-    public_price = _safe_float(
-        pricing.get("public_price")
-        or pricing.get("unit_price")
-        or pricing.get("price")
-        or pricing.get("monthly_price"),
-    )
+    # Premier champ de prix PRÉSENT (et non « premier truthy ») : un prix 0
+    # (offre gratuite — ex. activation VPC) est valide et ne doit pas « tomber »
+    # sur le champ suivant. Aligné sur ingest.normalize_product_item pour éviter
+    # une divergence entre prix stocké (BDD) et prix servi (ce chemin alimente
+    # pricing_summary, consommé par le calcul de devis).
+    raw_price: Any = None
+    if isinstance(pricing, dict):
+        for _price_key in ("public_price", "unit_price", "price", "monthly_price"):
+            candidate = pricing.get(_price_key)
+            if candidate is not None:
+                raw_price = candidate
+                break
+    public_price = _safe_float(raw_price)
     discounts = pricing.get("discounts") if isinstance(pricing, dict) else {}
     discount_percent = _safe_float(discounts.get("standard") if isinstance(discounts, dict) else 0)
     discounted_price = public_price * (1 - discount_percent / 100)
