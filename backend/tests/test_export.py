@@ -8,8 +8,10 @@ from app.quote import calculate_quote
 client = TestClient(app)
 
 # Deux familles différentes (Storage + Network) pour valider le regroupement par catégorie.
+# Mode partenaire + remise manuelle : exerce les deux lignes de détail « dont remise ».
 SAMPLE = QuoteRequest(
     period_months=36,
+    partner=True,
     discount_percent=10,
     lines=[
         QuoteLineRequest(sku="csp:fr1:iaas:storage:bloc:medium:v1", quantity=1024),
@@ -37,10 +39,25 @@ def test_pdf_has_magic_header():
 def test_html_contains_totals_and_groups():
     out = quote_to_html(_quote(), {"project": "Projet Démo"})
     assert "Projet Démo" in out
-    assert "Total mensuel remisé" in out
-    assert "dont remise catalogue" in out
+    assert "Total mensuel net" in out
+    # SAMPLE est en mode partenaire -> la remise partenaire figure dans le détail.
+    assert "dont remise partenaire" in out
     # Regroupement par catégorie présent.
     assert "Sous-total" in out
+
+
+def test_html_public_by_default_has_no_discount_rows():
+    # Décision métier : sans mode partenaire ni remise, prix publics et AUCUNE
+    # ligne « dont remise » dans le récapitulatif.
+    quote = calculate_quote(
+        QuoteRequest(
+            period_months=12,
+            lines=[QuoteLineRequest(sku="csp:fr1:network:epl:1g:v1", quantity=1)],
+        )
+    )
+    out = quote_to_html(quote, {"project": "Public"})
+    assert "dont remise" not in out
+    assert "Total mensuel net" in out
 
 
 def test_render_quote_rejects_unknown_format():
@@ -65,6 +82,23 @@ def test_export_endpoint_each_format():
         assert ctype in resp.headers["content-type"]
         assert "attachment" in resp.headers["content-disposition"]
         assert "Migration-ERP-2026" in resp.headers["content-disposition"]
+
+
+def test_export_endpoint_public_mode_has_no_discount():
+    # Bout-en-bout via l'endpoint HTTP : en mode public (partner défaut False),
+    # aucune ligne « dont remise » ne doit apparaître, même si discount_percent est
+    # envoyé (garde-fou contre une valeur résiduelle/legacy).
+    payload = QuoteRequest(
+        period_months=12,
+        discount_percent=25,
+        lines=[QuoteLineRequest(sku="csp:fr1:network:epl:1g:v1", quantity=1)],
+    ).model_dump()
+    payload["project"] = "Public"
+
+    resp = client.post("/api/quote/export?format=html", json=payload)
+    assert resp.status_code == 200, resp.text
+    body = resp.content.decode("utf-8")
+    assert "dont remise" not in body
 
 
 def test_export_endpoint_rejects_empty_quote():

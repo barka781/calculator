@@ -1,6 +1,6 @@
 /* Cloud Temple Calculator — calculette à plat.
    Familles dépliables, panier + résumé financier temps réel via /api/quote.
-   Le backend applique : prix_remisé = public × (1 − standard%) × (1 − commerciale%). */
+   Catalogue en prix publics ; remise « partenaire » (catalogue) seulement en mode partenaire. */
 
 const LOCAL_FALLBACK = "http://127.0.0.1:8001";
 // URL de l'API : window > localStorage > backend local. Mutable : voir le repli
@@ -125,7 +125,17 @@ const familyIcon = (f) => I[f.icon] || I.services;
 
 /* ---------- État ---------- */
 const quoteBoot = loadQuoteState();
+
+// Mode partenaire : bascule publique via le bouton activer/désactiver du résumé.
+// Choix mémorisé en localStorage (pas d'URL). Hors mode partenaire : prix publics,
+// aucune remise. La remise « partenaire » = remise catalogue par produit.
+const PARTNER_KEY = "calc.partnerMode";
+function loadPartnerMode() {
+  return localStorage.getItem(PARTNER_KEY) === "1";
+}
+
 const state = {
+  partner: loadPartnerMode(),
   health: null,
   online: false,
   apiError: "",
@@ -775,6 +785,7 @@ async function localQuoteForCart() {
     licenses,
     periodMonths: state.period,
     discountPercent: state.discount,
+    partner: state.partner,
   });
 }
 
@@ -796,7 +807,8 @@ async function runQuote() {
     const body = {
       lines: state.cart.map((l) => ({ sku: l.sku, quantity: l.quantity, source: l.source })),
       period_months: state.period,
-      discount_percent: state.discount,
+      partner: state.partner,
+      discount_percent: state.partner ? state.discount : 0,
     };
     const data = await fetchJson("api/quote", { method: "POST", body: JSON.stringify(body) });
     if (reqId !== quoteReq) return;
@@ -826,11 +838,12 @@ const quoteLineFor = (sku, source) =>
 
 /* ---------- Rendu : prix ---------- */
 function priceBlock(publicPrice, discounted, pct, unit) {
-  const hasDiscount = pct > 0 && discounted < publicPrice - 0.0001;
+  // Prix public par défaut ; le prix remisé (taux partenaire) n'apparaît qu'en mode partenaire.
+  const hasDiscount = state.partner && pct > 0 && discounted < publicPrice - 0.0001;
   return `
     <div class="product__price">
       ${hasDiscount ? `<div class="price__public">${esc(money(publicPrice))}</div>` : ""}
-      <div class="price__disc">${esc(money(discounted))}</div>
+      <div class="price__disc">${esc(money(hasDiscount ? discounted : publicPrice))}</div>
       <div class="price__unit">/ ${esc(unit)}${hasDiscount ? ` · −${num(pct)}%` : ""}</div>
     </div>`;
 }
@@ -926,15 +939,6 @@ function renderQuoteControls() {
 
   const period = document.querySelector("#period-select");
   if (period) period.value = String(state.period);
-
-  const discNum = document.querySelector("#discount-num");
-  if (discNum && Number(discNum.value) !== state.discount) discNum.value = String(state.discount);
-
-  const discRange = document.querySelector("#discount-range");
-  if (discRange) discRange.value = String(clamp(state.discount, 0, 60));
-
-  const discVal = document.querySelector("#discount-val");
-  if (discVal) discVal.textContent = `${num(state.discount)} %`;
 }
 
 function summarySkeleton() {
@@ -959,14 +963,11 @@ function summarySkeleton() {
           <select id="period-select" class="input">${periodOpts}</select>
         </div>
         <div class="cfg">
-          <label for="discount-num">Remise commerciale</label>
-          <input id="discount-num" class="input" type="number" min="0" max="100" step="1" value="${state.discount}" />
-        </div>
-        <div class="cfg cfg--discount">
-          <div class="discount-row">
-            <input id="discount-range" type="range" min="0" max="60" step="1" value="${clamp(state.discount, 0, 60)}" />
-            <span class="discount-val" id="discount-val">${num(state.discount)} %</span>
-          </div>
+          <label for="partner-toggle">Tarifs</label>
+          <button id="partner-toggle" type="button" class="partner-toggle ${state.partner ? "is-on" : ""}" data-partner-toggle aria-pressed="${state.partner ? "true" : "false"}" title="Basculer entre prix publics et tarifs partenaire (remise catalogue)">
+            <span class="partner-toggle__track"><span class="partner-toggle__thumb"></span></span>
+            <span class="partner-toggle__label">${state.partner ? "Partenaire" : "Publics"}</span>
+          </button>
         </div>
       </div>
       <div class="summary__lines" id="summary-lines"></div>
@@ -976,7 +977,7 @@ function summarySkeleton() {
         <button class="export-btn" data-export="pdf" title="Télécharger en PDF">${I.download} PDF</button>
         <button class="export-btn" data-export="html" title="Télécharger en HTML (imprimable)">${I.download} HTML</button>
       </div>
-      <div class="summary__foot">Tarifs HT en euros · remise standard catalogue appliquée automatiquement</div>
+      <div class="summary__foot">Tarifs HT en euros · ${state.partner ? "tarifs partenaire" : "catalogue en prix publics"}</div>
     </div>`;
 }
 
@@ -1441,7 +1442,7 @@ function populateLicenseFilters() {
 
 function licenseRow(l) {
   const line = findLine(l.sku, l.source);
-  const hasDisc = l.discountPct > 0;
+  const hasDisc = state.partner && l.discountPct > 0;
   const action = line
     ? stepper(l.sku, l.source, line.quantity)
     : `<button class="icon-btn" data-add="${esc(l.sku)}" data-source="license" title="Ajouter">+</button>`;
@@ -1493,8 +1494,8 @@ function renderSummaryLines() {
       const sub = unitPrice !== null ? `${num(l.quantity)} × ${money(unitPrice)} / ${esc(unit)}` : `${num(l.quantity)} × ${esc(unit)}`;
       // Détail des remises et de l'engagement appliqués à la ligne (issus de l'API).
       const meta = [];
-      if (ql && ql.standard_discount_percent > 0) meta.push(`<span class="cl-chip cl-chip--std">−${num(ql.standard_discount_percent)}% catalogue</span>`);
-      if (state.discount > 0) meta.push(`<span class="cl-chip cl-chip--com">−${num(state.discount)}% commerciale</span>`);
+      if (ql && ql.standard_discount_percent > 0) meta.push(`<span class="cl-chip cl-chip--std">−${num(ql.standard_discount_percent)}% partenaire</span>`);
+      if (state.partner && state.discount > 0) meta.push(`<span class="cl-chip cl-chip--com">−${num(state.discount)}% engagement</span>`);
       if (ql && ql.engagement_months > 1) meta.push(`<span class="cl-chip cl-chip--eng">engagement ${num(ql.engagement_months)} mois</span>`);
       const engTot = ql && ql.engagement_total ? ql.engagement_total : null;
       // Détail exhaustif par ligne (tous les champs fournis par l'API).
@@ -1502,7 +1503,7 @@ function renderSummaryLines() {
       if (ql) {
         const pub = ql.public_unit_price;
         const std = ql.standard_discount_percent || 0;
-        const com = state.discount || 0;
+        const com = state.partner ? state.discount || 0 : 0;
         const afterStd = pub * (1 - std / 100);
         const monthlySaving = publicMonthly !== null && monthly !== null ? publicMonthly - monthly : 0;
         const row = (lbl, val, cls = "") =>
@@ -1510,14 +1511,14 @@ function renderSummaryLines() {
         const rows = [];
         rows.push(row("Prix public unitaire", `${esc(money(pub))} <small>/ ${esc(unit)}</small>`));
         if (std > 0) {
-          rows.push(row("Remise catalogue", `<span class="cld-neg">−${num(std)} %</span>`));
-          rows.push(row("Après remise catalogue", `${esc(money(afterStd))} <small>/ ${esc(unit)}</small>`));
+          rows.push(row("Remise partenaire", `<span class="cld-neg">−${num(std)} %</span>`));
+          rows.push(row("Après remise partenaire", `${esc(money(afterStd))} <small>/ ${esc(unit)}</small>`));
         }
-        if (com > 0) rows.push(row("Remise commerciale", `<span class="cld-neg">−${num(com)} %</span>`));
-        rows.push(row("PU remisé", `${esc(money(unitPrice))} <small>/ ${esc(unit)}</small>`, "cld-row--accent"));
+        if (com > 0) rows.push(row("Remise engagement", `<span class="cld-neg">−${num(com)} %</span>`));
+        rows.push(row("PU net", `${esc(money(unitPrice))} <small>/ ${esc(unit)}</small>`, "cld-row--accent"));
         rows.push(row("Quantité", `× ${num(l.quantity)}`));
         if (publicMonthly !== null) rows.push(row("Mensuel public", esc(money(publicMonthly))));
-        if (monthly !== null) rows.push(row("Mensuel remisé", `${esc(money(monthly))} <small>/mois</small>`, "cld-row--strong"));
+        if (monthly !== null) rows.push(row("Mensuel net", `${esc(money(monthly))} <small>/mois</small>`, "cld-row--strong"));
         if (monthlySaving > 0.005) rows.push(row("Économie / mois", `<span class="cld-save">−${esc(money(monthlySaving))}</span>`));
         if (ql.engagement_months > 1) rows.push(row("Engagement", `${num(ql.engagement_months)} mois`));
         if (engTot !== null) rows.push(row("Total sur l'engagement", esc(money(engTot)), "cld-row--strong"));
@@ -1593,7 +1594,7 @@ function renderSummaryTotals() {
     )
     .join("");
 
-  // Répartition des remises (mensuel) : part catalogue (standard) vs part commerciale.
+  // Répartition des remises (mensuel) : part partenaire (catalogue) vs part engagement.
   let stdSaving = 0;
   let afterStd = 0;
   q.lines.forEach((ql) => {
@@ -1605,15 +1606,15 @@ function renderSummaryTotals() {
   const comSaving = afterStd * ((q.discount_percent || 0) / 100);
 
   const breakdown = [];
-  if (stdSaving > 0.005) breakdown.push(`<div class="total-row total-row--sub"><span class="lbl">↳ dont remise catalogue</span><span class="val">−${esc(money(stdSaving))}</span></div>`);
-  if (comSaving > 0.005) breakdown.push(`<div class="total-row total-row--sub"><span class="lbl">↳ dont remise commerciale</span><span class="val">−${esc(money(comSaving))}</span></div>`);
+  if (stdSaving > 0.005) breakdown.push(`<div class="total-row total-row--sub"><span class="lbl">↳ dont remise partenaire</span><span class="val">−${esc(money(stdSaving))}</span></div>`);
+  if (comSaving > 0.005) breakdown.push(`<div class="total-row total-row--sub"><span class="lbl">↳ dont remise engagement</span><span class="val">−${esc(money(comSaving))}</span></div>`);
 
   root.innerHTML = `
     ${byFamily.size > 1 ? `<div class="fam-block"><div class="fam-block__title">Répartition mensuelle</div>${famRows}</div>` : ""}
     <div class="total-row total-row--muted"><span class="lbl">Mensuel public</span><span class="val">${esc(money(q.monthly_public_total))}</span></div>
     ${breakdown.join("")}
     <div class="total-row total-row--main">
-      <span class="lbl">Total mensuel remisé</span>
+      <span class="lbl">Total mensuel net</span>
       <span class="val">${esc(money(q.monthly_discounted_total))}<span class="per per--main">/mois</span></span>
     </div>
     <div class="total-row"><span class="lbl">Projection ${esc(monthsLabel)}</span><span class="val">${esc(money(q.period_discounted_total))}</span></div>
@@ -1642,8 +1643,13 @@ function wireEvents() {
 }
 
 function onClick(e) {
-  const t = e.target.closest("[data-family-toggle],[data-toggle-all],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-sync],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close],[data-summary-size]");
+  const t = e.target.closest("[data-family-toggle],[data-toggle-all],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-sync],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close],[data-summary-size],[data-partner-toggle]");
   if (!t) return;
+
+  if (t.hasAttribute("data-partner-toggle")) {
+    togglePartnerMode();
+    return;
+  }
 
   if (t.dataset.summarySize) {
     applySummaryWidth(Number(t.dataset.summarySize));
@@ -1800,6 +1806,30 @@ function addProduct(sku, source) {
   afterCartChange(source);
 }
 
+// Bascule publique entre prix publics et tarifs partenaire (remise catalogue).
+// MAJ visuelle du switch + pied de page hors du flux render(), puis re-rendu des
+// vues qui dépendent du tarif (catalogue, licences, résumé) et recalcul du devis.
+function togglePartnerMode() {
+  state.partner = !state.partner;
+  localStorage.setItem(PARTNER_KEY, state.partner ? "1" : "0");
+
+  const btn = document.querySelector("[data-partner-toggle]");
+  if (btn) {
+    btn.classList.toggle("is-on", state.partner);
+    btn.setAttribute("aria-pressed", state.partner ? "true" : "false");
+    const lbl = btn.querySelector(".partner-toggle__label");
+    if (lbl) lbl.textContent = state.partner ? "Partenaire" : "Publics";
+  }
+  const foot = document.querySelector(".summary__foot");
+  if (foot) foot.textContent = `Tarifs HT en euros · ${state.partner ? "tarifs partenaire" : "catalogue en prix publics"}`;
+
+  renderCatalog();
+  renderLicenseResults();
+  renderSummaryLines();
+  renderSummaryTotals();
+  scheduleQuote();
+}
+
 // Met à jour l'affichage après une modification du panier sans casser le focus de la recherche licences.
 function afterCartChange(source) {
   if (source === "license") {
@@ -1826,7 +1856,8 @@ async function exportQuote(format, btn) {
     const body = {
       lines: state.cart.map((l) => ({ sku: l.sku, quantity: l.quantity, source: l.source })),
       period_months: state.period,
-      discount_percent: state.discount,
+      partner: state.partner,
+      discount_percent: state.partner ? state.discount : 0,
       project: state.projectName || "",
       date: new Date().toLocaleDateString("fr-FR"),
     };
@@ -1880,20 +1911,6 @@ function onInput(e) {
     state.lic.page = 1;
     window.clearTimeout(licTimer);
     licTimer = window.setTimeout(renderLicenseResults, 130);
-    return;
-  }
-
-  if (el.id === "discount-range" || el.id === "discount-num") {
-    let v = clamp(Number(el.value), 0, 100);
-    state.discount = v;
-    persistQuotes();
-    const range = document.querySelector("#discount-range");
-    const numInput = document.querySelector("#discount-num");
-    const valEl = document.querySelector("#discount-val");
-    if (range && el.id !== "discount-range") range.value = clamp(v, 0, 60);
-    if (numInput && el.id !== "discount-num") numInput.value = v;
-    if (valEl) valEl.textContent = `${num(v)} %`;
-    scheduleQuote();
     return;
   }
 

@@ -27,10 +27,15 @@
     );
   }
 
-  function calculateLocalQuote({ lines, catalog, licenses, periodMonths, discountPercent }) {
+  function calculateLocalQuote({ lines, catalog, licenses, periodMonths, discountPercent, partner }) {
     const period = Math.max(1, Math.min(120, Math.round(toNumber(periodMonths, 12))));
-    const commercialPct = Math.max(0, Math.min(100, toNumber(discountPercent, 0)));
-    const extraFactor = 1 - commercialPct / 100;
+    // Miroir du backend : prix publics par défaut ; la remise catalogue (taux par
+    // produit) ne s'applique qu'en mode partenaire. `discountPercent` = remise
+    // additionnelle optionnelle (masquée dans l'UI, défaut 0).
+    const isPartner = Boolean(partner);
+    // Miroir backend : la remise additionnelle ne s'applique qu'en mode partenaire.
+    const extraPct = isPartner ? Math.max(0, Math.min(100, toNumber(discountPercent, 0))) : 0;
+    const extraFactor = 1 - extraPct / 100;
     let monthlyPublicTotal = 0;
     let monthlyDiscountedTotal = 0;
     let engagementTotalSum = 0;
@@ -42,7 +47,7 @@
       const source = item.source === "license" ? "license" : "catalog";
       const quantity = toNumber(line.quantity, 1);
       const publicUnit = toNumber(item.publicPrice, 0);
-      const standardPct = toNumber(item.discountPct, 0);
+      const standardPct = isPartner ? toNumber(item.discountPct, 0) : 0;
       const discountedUnit = publicUnit * (1 - standardPct / 100) * extraFactor;
       const publicMonthly = publicUnit * quantity;
       const monthlyTotal = discountedUnit * quantity;
@@ -72,7 +77,8 @@
       status: "success",
       currency: "EUR",
       period_months: period,
-      discount_percent: commercialPct,
+      partner: isPartner,
+      discount_percent: extraPct,
       lines: responseLines,
       monthly_public_total: roundMoney(monthlyPublicTotal),
       monthly_discounted_total: roundMoney(monthlyDiscountedTotal),

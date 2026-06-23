@@ -989,24 +989,53 @@ body.is-resizing {
 .cfg .input {
   width: 100%;
 }
-.cfg--discount {
-  grid-column: 1 / -1;
-}
-.discount-row {
-  display: flex;
+/* bascule publique prix publics ↔ tarifs partenaire */
+.partner-toggle {
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--surface-3);
+  color: var(--muted);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
 }
-.discount-row input[type="range"] {
-  flex: 1;
-  accent-color: var(--green-bright);
+.partner-toggle:hover {
+  border-color: var(--border-strong);
 }
-.discount-val {
-  font-weight: 700;
+.partner-toggle__track {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background 0.15s ease;
+}
+.partner-toggle__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ink);
+  transition: transform 0.15s ease;
+}
+.partner-toggle.is-on {
   color: var(--green-bright);
-  min-width: 52px;
-  text-align: right;
-  font-size: 15px;
+  border-color: var(--green-line);
+  background: var(--green-soft);
+}
+.partner-toggle.is-on .partner-toggle__track {
+  background: var(--green);
+}
+.partner-toggle.is-on .partner-toggle__thumb {
+  transform: translateX(14px);
 }
 
 /* lignes du devis */

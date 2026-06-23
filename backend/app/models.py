@@ -42,6 +42,11 @@ class QuoteLineRequest(BaseModel):
 class QuoteRequest(BaseModel):
     lines: list[QuoteLineRequest] = Field(default_factory=list)
     period_months: int = Field(default=12, ge=1, le=120)
+    # Mode partenaire : applique la remise catalogue (taux par produit). Hors
+    # mode partenaire (défaut), les prix restent publics (aucune remise auto).
+    partner: bool = Field(default=False)
+    # Remise additionnelle optionnelle (masquée dans l'UI publique, défaut 0).
+    # Réservée au futur levier « remise d'engagement » ; conservée côté API.
     discount_percent: float = Field(default=0, ge=0, le=100)
 
 
@@ -70,6 +75,7 @@ class QuoteResponse(BaseModel):
     status: Literal["success"]
     currency: str = "EUR"
     period_months: int
+    partner: bool = False
     discount_percent: float
     lines: list[QuoteLineResponse]
     monthly_public_total: float

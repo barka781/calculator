@@ -78,8 +78,17 @@ def _resolve_line(line: QuoteLineRequest) -> tuple[Literal["catalog", "license"]
 
 def calculate_quote(request: QuoteRequest) -> QuoteResponse:
     response_lines: list[QuoteLineResponse] = []
-    # Remise commerciale supplémentaire, optionnelle, empilée par-dessus la remise standard (défaut 0).
-    extra_factor = 1 - request.discount_percent / 100
+    # Prix publics par défaut. La remise catalogue (taux par produit) n'est
+    # appliquée QU'EN mode partenaire ; `discount_percent` est une remise
+    # additionnelle optionnelle (masquée dans l'UI publique, défaut 0).
+    partner = request.partner
+    # `discount_percent` (remise additionnelle, masquée dans l'UI) ne s'applique
+    # QU'EN mode partenaire : un client public ne doit JAMAIS être remisé, même si
+    # une valeur résiduelle (devis ancien persisté) ou un client API legacy l'envoie.
+    # On expose la remise EFFECTIVE (0 hors partenaire) pour que tout consommateur
+    # de la réponse (exports, UI) ne calcule pas une remise fantôme.
+    effective_discount = request.discount_percent if partner else 0.0
+    extra_factor = 1 - effective_discount / 100
     monthly_public_total = 0.0
     monthly_discounted_total = 0.0
     engagement_total_sum = 0.0
@@ -87,9 +96,8 @@ def calculate_quote(request: QuoteRequest) -> QuoteResponse:
     for line in request.lines:
         source, item, public_unit_price = _resolve_line(line)
 
-        # Remise standard catalogue appliquée automatiquement (comme QuoteFlow),
-        # puis remise commerciale supplémentaire empilée.
-        standard_pct = _standard_discount_percent(item)
+        # En mode partenaire : remise catalogue par produit ; sinon 0 (prix public).
+        standard_pct = _standard_discount_percent(item) if partner else 0.0
         discounted_unit_price = public_unit_price * (1 - standard_pct / 100) * extra_factor
 
         public_monthly_total = public_unit_price * line.quantity
@@ -120,8 +128,9 @@ def calculate_quote(request: QuoteRequest) -> QuoteResponse:
 
     return QuoteResponse(
         status="success",
+        partner=partner,
         period_months=request.period_months,
-        discount_percent=request.discount_percent,
+        discount_percent=effective_discount,
         lines=response_lines,
         monthly_public_total=_round_money(monthly_public_total),
         monthly_discounted_total=_round_money(monthly_discounted_total),

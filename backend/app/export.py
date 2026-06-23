@@ -25,8 +25,8 @@ COLUMNS = [
     ("sku", "Référence"),
     ("quantity", "Qté"),
     ("public_unit_price", "PU public"),
-    ("standard_discount_percent", "Remise cat."),
-    ("discounted_unit_price", "PU remisé"),
+    ("standard_discount_percent", "Remise"),
+    ("discounted_unit_price", "PU net"),
     ("monthly_total", "Total /mois"),
     ("engagement_months", "Engagement"),
     ("engagement_total", "Total engagement"),
@@ -83,8 +83,12 @@ def _period_label(months: int) -> str:
     return f"{months} mois"
 
 
+def _tariff_label(quote: QuoteResponse) -> str:
+    return "Partenaire" if quote.partner else "Public"
+
+
 def _savings_breakdown(quote: QuoteResponse) -> tuple[float, float]:
-    """Part mensuelle de remise catalogue (standard) et de remise commerciale."""
+    """Part mensuelle de remise partenaire (catalogue) et de remise d'engagement."""
     std_saving = 0.0
     after_std = 0.0
     for line in quote.lines:
@@ -123,7 +127,7 @@ def quote_to_xlsx(quote: QuoteResponse, meta: Optional[dict] = None) -> bytes:
     ws.append([f"Devis Cloud Temple — {m['project']}"])
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
     ws.cell(row=1, column=1).font = Font(bold=True, size=14, color=GREEN_DARK)
-    info = f"Projection : {_period_label(m['period_months'])}    Remise commerciale : {_pct(m['discount_percent'])}"
+    info = f"Projection : {_period_label(m['period_months'])}    Tarifs : {_tariff_label(quote)}"
     if m["date"]:
         info = f"{m['date']}    " + info
     ws.append([info])
@@ -176,11 +180,15 @@ def quote_to_xlsx(quote: QuoteResponse, meta: Optional[dict] = None) -> bytes:
     # Totaux
     ws.append([])
     std_saving, com_saving = _savings_breakdown(quote)
-    totals = [
-        ("Mensuel public", _eur(quote.monthly_public_total)),
-        ("dont remise catalogue", "−" + _eur(std_saving)),
-        ("dont remise commerciale", "−" + _eur(com_saving)),
-        ("Total mensuel remisé", _eur(quote.monthly_discounted_total)),
+    # Le détail des remises n'apparaît que si une remise s'applique réellement
+    # (prix publics par défaut -> pas de lignes « dont remise »).
+    totals = [("Mensuel public", _eur(quote.monthly_public_total))]
+    if std_saving > 0.005:
+        totals.append(("dont remise partenaire", "−" + _eur(std_saving)))
+    if com_saving > 0.005:
+        totals.append(("dont remise engagement", "−" + _eur(com_saving)))
+    totals += [
+        ("Total mensuel net", _eur(quote.monthly_discounted_total)),
         (f"Projection {_period_label(m['period_months'])}", _eur(quote.period_discounted_total)),
         ("Total à l'engagement", _eur(quote.total_on_engagement)),
         (f"Économie sur {_period_label(m['period_months'])}", _eur(quote.savings_total)),
@@ -214,6 +222,16 @@ def quote_to_html(quote: QuoteResponse, meta: Optional[dict] = None) -> str:
     e = _html.escape
     std_saving, com_saving = _savings_breakdown(quote)
     period = _period_label(m["period_months"])
+
+    # Détail des remises : seulement si une remise s'applique (prix publics par défaut,
+    # on n'affiche alors ni « Mensuel public » barré ni lignes « dont remise »).
+    breakdown = ""
+    if std_saving > 0.005 or com_saving > 0.005:
+        breakdown += f'<div class="row muted"><span>Mensuel public</span><span class="v">{e(_eur(quote.monthly_public_total))}</span></div>'
+        if std_saving > 0.005:
+            breakdown += f'<div class="row detail"><span>↳ dont remise partenaire</span><span>−{e(_eur(std_saving))}</span></div>'
+        if com_saving > 0.005:
+            breakdown += f'<div class="row detail"><span>↳ dont remise engagement</span><span>−{e(_eur(com_saving))}</span></div>'
 
     rows = []
     for cat, lines in _grouped(quote).items():
@@ -272,22 +290,20 @@ def quote_to_html(quote: QuoteResponse, meta: Optional[dict] = None) -> str:
 <body>
   <header>
     <h1>Devis Cloud Temple — {e(m['project'])}</h1>
-    <div class="meta">{date_line}<span>Projection : {e(period)}</span><span>Remise commerciale : {e(_pct(m['discount_percent']))}</span></div>
+    <div class="meta">{date_line}<span>Projection : {e(period)}</span><span>Tarifs : {e(_tariff_label(quote))}</span></div>
   </header>
   <table>
     <thead><tr>{headers}</tr></thead>
     <tbody>{''.join(rows)}</tbody>
   </table>
   <div class="totals">
-    <div class="row muted"><span>Mensuel public</span><span class="v">{e(_eur(quote.monthly_public_total))}</span></div>
-    <div class="row detail"><span>↳ dont remise catalogue</span><span>−{e(_eur(std_saving))}</span></div>
-    <div class="row detail"><span>↳ dont remise commerciale</span><span>−{e(_eur(com_saving))}</span></div>
-    <div class="row main"><span>Total mensuel remisé</span><span>{e(_eur(quote.monthly_discounted_total))}</span></div>
+    {breakdown}
+    <div class="row main"><span>Total mensuel net</span><span>{e(_eur(quote.monthly_discounted_total))}</span></div>
     <div class="row"><span>Projection {e(period)}</span><span>{e(_eur(quote.period_discounted_total))}</span></div>
     <div class="row"><span>Total à l'engagement</span><span>{e(_eur(quote.total_on_engagement))}</span></div>
     <div class="row save"><span>Économie sur {e(period)}</span><span>{e(_eur(quote.savings_total))}</span></div>
   </div>
-  <footer>Tarifs HT en euros · remise standard catalogue appliquée automatiquement · Cloud Temple</footer>
+  <footer>Tarifs HT en euros · catalogue en prix publics · Cloud Temple</footer>
 </body></html>"""
 
 
@@ -329,7 +345,7 @@ def quote_to_pdf(quote: QuoteResponse, meta: Optional[dict] = None) -> bytes:
         Paragraph(f"Devis Cloud Temple — {_html.escape(m['project'])}", title_style),
         Spacer(1, 3),
     ]
-    info = f"Projection : {period} &nbsp;&nbsp; Remise commerciale : {_pct(m['discount_percent'])}"
+    info = f"Projection : {period} &nbsp;&nbsp; Tarifs : {_tariff_label(quote)}"
     if m["date"]:
         info = f"{m['date']} &nbsp;&nbsp; " + info
     story += [Paragraph(info, meta_style), Spacer(1, 8)]
@@ -388,29 +404,37 @@ def quote_to_pdf(quote: QuoteResponse, meta: Optional[dict] = None) -> bytes:
     # Bloc totaux
     std_saving, com_saving = _savings_breakdown(quote)
     story.append(Spacer(1, 10))
-    tot_rows = [
-        ["Mensuel public", _eur(quote.monthly_public_total)],
-        ["dont remise catalogue", "−" + _eur(std_saving)],
-        ["dont remise commerciale", "−" + _eur(com_saving)],
-        ["Total mensuel remisé", _eur(quote.monthly_discounted_total)],
+    # Lignes « dont remise » seulement si une remise s'applique (prix publics par défaut).
+    tot_rows = [["Mensuel public", _eur(quote.monthly_public_total)]]
+    if std_saving > 0.005:
+        tot_rows.append(["dont remise partenaire", "−" + _eur(std_saving)])
+    if com_saving > 0.005:
+        tot_rows.append(["dont remise engagement", "−" + _eur(com_saving)])
+    total_idx = len(tot_rows)  # ligne « Total mensuel net »
+    tot_rows += [
+        ["Total mensuel net", _eur(quote.monthly_discounted_total)],
         [f"Projection {period}", _eur(quote.period_discounted_total)],
         ["Total à l'engagement", _eur(quote.total_on_engagement)],
         [f"Économie sur {period}", _eur(quote.savings_total)],
     ]
-    tot = Table(tot_rows, colWidths=[55 * mm, 35 * mm], hAlign="RIGHT")
-    tot.setStyle(TableStyle([
+    savings_idx = len(tot_rows) - 1  # ligne « Économie »
+    # Indices de style calculés (les lignes de détail optionnelles décalent la grille).
+    tot_style = [
         ("FONTSIZE", (0, 0), (-1, -1), 9),
         ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-        ("TEXTCOLOR", (0, 1), (-1, 2), colors.HexColor("#5B6B7D")),
-        ("LINEABOVE", (0, 3), (-1, 3), 1, green),
-        ("FONTNAME", (0, 3), (-1, 3), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 3), (-1, 3), 12),
-        ("TEXTCOLOR", (0, 3), (-1, 3), green_dark),
-        ("TEXTCOLOR", (0, 6), (-1, 6), green),
-        ("FONTNAME", (0, 6), (-1, 6), "Helvetica-Bold"),
+        ("LINEABOVE", (0, total_idx), (-1, total_idx), 1, green),
+        ("FONTNAME", (0, total_idx), (-1, total_idx), "Helvetica-Bold"),
+        ("FONTSIZE", (0, total_idx), (-1, total_idx), 12),
+        ("TEXTCOLOR", (0, total_idx), (-1, total_idx), green_dark),
+        ("TEXTCOLOR", (0, savings_idx), (-1, savings_idx), green),
+        ("FONTNAME", (0, savings_idx), (-1, savings_idx), "Helvetica-Bold"),
         ("TOPPADDING", (0, 0), (-1, -1), 2),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-    ]))
+    ]
+    if total_idx > 1:  # des lignes de détail existent (indices 1..total_idx-1)
+        tot_style.append(("TEXTCOLOR", (0, 1), (-1, total_idx - 1), colors.HexColor("#5B6B7D")))
+    tot = Table(tot_rows, colWidths=[55 * mm, 35 * mm], hAlign="RIGHT")
+    tot.setStyle(TableStyle(tot_style))
     story.append(tot)
 
     doc.build(story)
