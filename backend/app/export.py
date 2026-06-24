@@ -88,16 +88,42 @@ def _tariff_label(quote: QuoteResponse) -> str:
 
 
 def _savings_breakdown(quote: QuoteResponse) -> tuple[float, float]:
-    """Part mensuelle de remise partenaire (catalogue) et de remise d'engagement."""
+    """Part MENSUELLE de remise partenaire (catalogue) et de remise d'engagement.
+
+    Calculée sur les seules lignes récurrentes et au mensuel AMORTI (prix natif /
+    term_months) pour rester cohérente avec `monthly_discounted_total`. La remise
+    sur un coût ponctuel n'est pas mensuelle : elle reste portée par `savings_total`."""
     std_saving = 0.0
     after_std = 0.0
     for line in quote.lines:
-        pub_m = line.public_unit_price * line.quantity
-        after_m = line.public_unit_price * (1 - (line.standard_discount_percent or 0) / 100) * line.quantity
+        if not line.recurring:
+            continue
+        months = line.term_months or 1
+        pub_m = (line.public_unit_price / months) * line.quantity
+        after_m = (line.public_unit_price * (1 - (line.standard_discount_percent or 0) / 100) / months) * line.quantity
         std_saving += pub_m - after_m
         after_std += after_m
     com_saving = after_std * ((quote.discount_percent or 0) / 100)
     return std_saving, com_saving
+
+
+def _term_label(line) -> str:
+    """Libellé de terme d'une ligne pour la colonne « Engagement » des exports."""
+    if not getattr(line, "recurring", True):
+        return "ponctuel"
+    if line.term == "annual":
+        return "annuel"
+    if line.term == "multiyear":
+        years = (line.term_months or 12) // 12
+        return f"{years} ans"
+    if line.term == "monthly":
+        return "mensuel"
+    return f"{line.engagement_months} mois" if line.engagement_months > 1 else "—"
+
+
+def _monthly_cell(line) -> str:
+    """Total mensuel amorti, ou « — » pour un coût ponctuel (jamais mensuel)."""
+    return _eur(line.monthly_total) if getattr(line, "recurring", True) else "—"
 
 
 # --------------------------------------------------------------------------- #
@@ -151,8 +177,8 @@ def quote_to_xlsx(quote: QuoteResponse, meta: Optional[dict] = None) -> bytes:
             _eur(line.public_unit_price),
             _pct(line.standard_discount_percent),
             _eur(line.discounted_unit_price),
-            _eur(line.monthly_total),
-            f"{line.engagement_months} mois" if line.engagement_months > 1 else "—",
+            _monthly_cell(line),
+            _term_label(line),
             _eur(line.engagement_total),
         ])
         r = ws.max_row
@@ -187,8 +213,10 @@ def quote_to_xlsx(quote: QuoteResponse, meta: Optional[dict] = None) -> bytes:
         totals.append(("dont remise partenaire", "−" + _eur(std_saving)))
     if com_saving > 0.005:
         totals.append(("dont remise engagement", "−" + _eur(com_saving)))
+    totals.append(("Total mensuel net", _eur(quote.monthly_discounted_total)))
+    if quote.one_time_total > 0.005:
+        totals.append(("Coûts ponctuels (à l'achat)", _eur(quote.one_time_total)))
     totals += [
-        ("Total mensuel net", _eur(quote.monthly_discounted_total)),
         (f"Projection {_period_label(m['period_months'])}", _eur(quote.period_discounted_total)),
         ("Total à l'engagement", _eur(quote.total_on_engagement)),
         (f"Économie sur {_period_label(m['period_months'])}", _eur(quote.savings_total)),
@@ -238,7 +266,6 @@ def quote_to_html(quote: QuoteResponse, meta: Optional[dict] = None) -> str:
         subtotal = sum(l.monthly_total for l in lines)
         rows.append(f'<tr class="cat"><td colspan="9">{e(cat)}</td></tr>')
         for l in lines:
-            eng = f"{l.engagement_months} mois" if l.engagement_months > 1 else "—"
             rows.append(
                 "<tr>"
                 f"<td>{e(l.name)}</td><td class='mono'>{e(l.sku)}</td>"
@@ -246,8 +273,8 @@ def quote_to_html(quote: QuoteResponse, meta: Optional[dict] = None) -> str:
                 f"<td class='r'>{e(_eur(l.public_unit_price))}</td>"
                 f"<td class='r'>{e(_pct(l.standard_discount_percent))}</td>"
                 f"<td class='r'>{e(_eur(l.discounted_unit_price))}</td>"
-                f"<td class='r strong'>{e(_eur(l.monthly_total))}</td>"
-                f"<td class='r'>{eng}</td>"
+                f"<td class='r strong'>{e(_monthly_cell(l))}</td>"
+                f"<td class='r'>{e(_term_label(l))}</td>"
                 f"<td class='r'>{e(_eur(l.engagement_total))}</td>"
                 "</tr>"
             )
@@ -258,6 +285,13 @@ def quote_to_html(quote: QuoteResponse, meta: Optional[dict] = None) -> str:
 
     headers = "".join(
         f"<th class='{'r' if i >= 2 else ''}'>{e(label)}</th>" for i, (_, label) in enumerate(COLUMNS)
+    )
+    # Coûts ponctuels (licences perpétuelles / one-shot) : ligne affichée seulement si présente.
+    one_time_row = (
+        f'<div class="row"><span>Coûts ponctuels (à l\'achat)</span>'
+        f'<span>{e(_eur(quote.one_time_total))}</span></div>'
+        if quote.one_time_total > 0.005
+        else ""
     )
     date_line = f"<span>{e(m['date'])}</span>" if m["date"] else ""
     return f"""<!doctype html>
@@ -299,6 +333,7 @@ def quote_to_html(quote: QuoteResponse, meta: Optional[dict] = None) -> str:
   <div class="totals">
     {breakdown}
     <div class="row main"><span>Total mensuel net</span><span>{e(_eur(quote.monthly_discounted_total))}</span></div>
+    {one_time_row}
     <div class="row"><span>Projection {e(period)}</span><span>{e(_eur(quote.period_discounted_total))}</span></div>
     <div class="row"><span>Total à l'engagement</span><span>{e(_eur(quote.total_on_engagement))}</span></div>
     <div class="row save"><span>Économie sur {e(period)}</span><span>{e(_eur(quote.savings_total))}</span></div>
@@ -375,7 +410,6 @@ def quote_to_pdf(quote: QuoteResponse, meta: Optional[dict] = None) -> bytes:
         r += 1
         subtotal = 0.0
         for l in lines:
-            eng = f"{l.engagement_months} mois" if l.engagement_months > 1 else "—"
             data.append([
                 Paragraph(_html.escape(l.name), cell),
                 Paragraph(f"<font size=6>{_html.escape(l.sku)}</font>", cell),
@@ -383,8 +417,8 @@ def quote_to_pdf(quote: QuoteResponse, meta: Optional[dict] = None) -> bytes:
                 _eur(l.public_unit_price),
                 _pct(l.standard_discount_percent),
                 _eur(l.discounted_unit_price),
-                _eur(l.monthly_total),
-                eng,
+                _monthly_cell(l),
+                _term_label(l),
                 _eur(l.engagement_total),
             ])
             subtotal += l.monthly_total
@@ -411,8 +445,10 @@ def quote_to_pdf(quote: QuoteResponse, meta: Optional[dict] = None) -> bytes:
     if com_saving > 0.005:
         tot_rows.append(["dont remise engagement", "−" + _eur(com_saving)])
     total_idx = len(tot_rows)  # ligne « Total mensuel net »
+    tot_rows.append(["Total mensuel net", _eur(quote.monthly_discounted_total)])
+    if quote.one_time_total > 0.005:
+        tot_rows.append(["Coûts ponctuels (à l'achat)", _eur(quote.one_time_total)])
     tot_rows += [
-        ["Total mensuel net", _eur(quote.monthly_discounted_total)],
         [f"Projection {period}", _eur(quote.period_discounted_total)],
         ["Total à l'engagement", _eur(quote.total_on_engagement)],
         [f"Économie sur {period}", _eur(quote.savings_total)],

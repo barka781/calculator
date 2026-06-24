@@ -63,10 +63,21 @@ class QuoteLineResponse(BaseModel):
     source: Literal["catalog", "license"]
     unit: Optional[str] = None
     quantity: float
+    # Prix unitaire NATIF (par terme) : mensuel pour le catalogue/licence mensuelle,
+    # annuel/pluriannuel pour une licence à terme (ex. 7551.91 €/an), prix d'achat
+    # pour une licence perpétuelle. `monthly_total` ci-dessous est le mensuel AMORTI.
     public_unit_price: float
     discounted_unit_price: float
     standard_discount_percent: float = 0
-    monthly_total: float
+    # Terme tarifaire (None pour le catalogue/perpétuel) et nombre de mois couverts
+    # par le prix natif (1 mensuel, 12 annuel, engagement×12 pluriannuel).
+    term: Optional[str] = None
+    term_months: int = 1
+    # True = coût mensuel récurrent (amorti dans monthly_total) ; False = coût
+    # ponctuel (licence perpétuelle / one-shot), porté par one_time_total.
+    recurring: bool = True
+    monthly_total: float = 0
+    one_time_total: float = 0
     engagement_months: int = 1
     engagement_total: float = 0
 
@@ -78,8 +89,12 @@ class QuoteResponse(BaseModel):
     partner: bool = False
     discount_percent: float
     lines: list[QuoteLineResponse]
+    # Totaux MENSUELS récurrents (licences perpétuelles / one-shot exclues).
     monthly_public_total: float
     monthly_discounted_total: float
+    # Coûts PONCTUELS (à l'achat) : somme des licences perpétuelles / one-shot.
+    one_time_total: float = 0
+    # Projections = mensuel récurrent × période + coûts ponctuels (une seule fois).
     period_public_total: float
     period_discounted_total: float
     savings_total: float

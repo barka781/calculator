@@ -1155,6 +1155,15 @@ body.is-resizing {
   color: var(--green);
   font-weight: 700;
 }
+/* Coûts ponctuels (licences perpétuelles / one-shot) : distincts du mensuel récurrent. */
+.total-row--onetime .lbl small {
+  color: var(--faint);
+  font-weight: 500;
+}
+.total-row--onetime .val {
+  color: var(--warn);
+  font-weight: 700;
+}
 .total-sub {
   font-size: 11px;
   color: var(--faint);

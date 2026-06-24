@@ -1,5 +1,17 @@
+from app import quote as quote_mod
 from app.models import QuoteLineRequest, QuoteRequest
 from app.quote import calculate_quote
+
+
+def _license_item(term, engagement, price, sku="LIC-TERM-TEST"):
+    """Licence synthétique au format de find_license_item (pricing.term + engagement)."""
+    return {
+        "sku": sku,
+        "name": f"Licence {term}",
+        "unit": "licence",
+        "pricing": {"term": term, "engagement": engagement, "public_price": price},
+        "price": price,
+    }
 
 
 def test_quote_public_prices_by_default():
@@ -103,3 +115,95 @@ def test_quote_manual_discount_ignored_without_partner():
     assert quote.lines[0].standard_discount_percent == 0
     assert quote.lines[0].discounted_unit_price == 0.0756  # prix public, remise IGNORÉE
     assert quote.savings_total == 0
+
+
+# --------------------------------------------------------------------------- #
+# Bug L4 : prise en compte du terme tarifaire des licences (annual / multiyear /
+# perpétuel). Sans cela, un prix de période (annuel/pluriannuel) était compté comme
+# un mensuel et multiplié par la projection -> sur-comptage ×12 à ×36.
+# --------------------------------------------------------------------------- #
+def test_quote_annual_license_amortized_not_counted_as_monthly(monkeypatch):
+    # Licence annuelle : prix = total/an (7551,91). Projection 12 mois = 1 an = 7551,91, PAS 90 622.
+    monkeypatch.setattr(quote_mod, "find_license_item", lambda sku: _license_item("annual", 1, 7551.91))
+    request = QuoteRequest(period_months=12, lines=[QuoteLineRequest(sku="LIC-TERM-TEST", source="license")])
+
+    quote = calculate_quote(request)
+    line = quote.lines[0]
+
+    assert line.recurring is True
+    assert line.term == "annual"
+    assert line.term_months == 12
+    assert line.public_unit_price == 7551.91          # prix natif annuel conservé
+    assert line.monthly_total == 629.33               # 7551.91 / 12 (mensuel amorti)
+    assert line.one_time_total == 0
+    assert quote.monthly_discounted_total == 629.33
+    assert quote.period_discounted_total == 7551.91   # 12 mois = 1 an (et NON 90 622,92)
+    assert quote.one_time_total == 0
+    assert line.engagement_months == 12
+    assert line.engagement_total == 7551.91           # total sur l'engagement = prix annuel
+
+
+def test_quote_multiyear_license_uses_engagement_years_not_sku(monkeypatch):
+    # multiyear : durée = engagement (années) × 12, jamais le suffixe SKU. 3 ans -> 36 mois.
+    monkeypatch.setattr(quote_mod, "find_license_item", lambda sku: _license_item("multiyear", 3, 14706.34))
+    request = QuoteRequest(period_months=36, lines=[QuoteLineRequest(sku="LIC-TERM-TEST", source="license")])
+
+    quote = calculate_quote(request)
+    line = quote.lines[0]
+
+    assert line.term_months == 36
+    assert line.monthly_total == 408.51               # 14706.34 / 36
+    assert quote.period_discounted_total == 14706.34  # 36 mois = le bundle (et NON 529 428)
+    assert quote.one_time_total == 0
+
+
+def test_quote_perpetual_license_is_one_time_invariant_to_projection(monkeypatch):
+    # Perpétuelle (term None, engagement 'Perpetuel') : coût ponctuel, JAMAIS × projection.
+    monkeypatch.setattr(quote_mod, "find_license_item", lambda sku: _license_item(None, "Perpetuel", 161.48))
+    lines = [QuoteLineRequest(sku="LIC-TERM-TEST", source="license", quantity=4)]
+
+    q12 = calculate_quote(QuoteRequest(period_months=12, lines=lines))
+    q60 = calculate_quote(QuoteRequest(period_months=60, lines=lines))
+    line = q12.lines[0]
+
+    assert line.recurring is False
+    assert line.monthly_total == 0
+    assert line.one_time_total == 645.92              # 161.48 × 4
+    assert q12.monthly_discounted_total == 0
+    assert q12.one_time_total == 645.92
+    assert q12.period_discounted_total == 645.92      # compté une seule fois
+    assert q60.period_discounted_total == 645.92      # INVARIANT à la projection
+    assert q12.total_on_engagement == 645.92
+
+
+def test_quote_multiyear_5y_not_counted_as_monthly(monkeypatch):
+    # Anti-régression directe du bug : le mensuel d'un pluriannuel != son prix de bundle.
+    monkeypatch.setattr(quote_mod, "find_license_item", lambda sku: _license_item("multiyear", 5, 24000.0))
+    request = QuoteRequest(period_months=60, lines=[QuoteLineRequest(sku="LIC-TERM-TEST", source="license")])
+
+    quote = calculate_quote(request)
+    line = quote.lines[0]
+
+    assert line.term_months == 60                     # 5 ans
+    assert line.monthly_total == 400.0                # 24000 / 60, surtout PAS 24000
+    assert quote.monthly_discounted_total != 24000.0
+    assert quote.period_discounted_total == 24000.0   # 60 mois = le bundle 5 ans
+
+
+def test_quote_partner_discount_applies_on_annual_monthly_equivalent(monkeypatch):
+    # En mode partenaire, la remise catalogue s'applique au prix natif puis est amortie.
+    item = _license_item("annual", 1, 1200.0)
+    item["pricing"]["discounts"] = {"standard": 25}
+    monkeypatch.setattr(quote_mod, "find_license_item", lambda sku: item)
+    request = QuoteRequest(
+        period_months=12, partner=True, lines=[QuoteLineRequest(sku="LIC-TERM-TEST", source="license")]
+    )
+
+    quote = calculate_quote(request)
+    line = quote.lines[0]
+
+    assert line.standard_discount_percent == 25
+    assert line.discounted_unit_price == 900.0        # 1200 × 0.75 (prix natif remisé)
+    assert line.monthly_total == 75.0                 # 900 / 12
+    assert quote.period_discounted_total == 900.0     # 12 mois = 1 an remisé
+    assert quote.savings_total == 300.0               # (1200 − 900) sur l'année

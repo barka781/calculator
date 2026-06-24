@@ -17,6 +17,23 @@
     return match ? Number(match[1]) : 1;
   }
 
+  // Miroir de backend `_term_info` : nature tarifaire d'une ligne.
+  // -> { term, termMonths, recurring }. Catalogue = mensuel récurrent. Licences :
+  // terme via item.term, durée pluriannuelle via item.engagement (années), perpétuel
+  // / one-shot / inconnu -> coût ponctuel (jamais multiplié par la projection).
+  function termInfo(item) {
+    if (!item || item.source !== "license") return { term: null, termMonths: 1, recurring: true };
+    const key = String(item.term || "").trim().toLowerCase();
+    if (key === "monthly") return { term: item.term, termMonths: 1, recurring: true };
+    if (key === "annual") return { term: item.term, termMonths: 12, recurring: true };
+    if (key === "multiyear") {
+      const years = Number(item.engagement);
+      if (Number.isFinite(years) && years > 0) return { term: item.term, termMonths: Math.round(years) * 12, recurring: true };
+      return { term: item.term, termMonths: 0, recurring: false };
+    }
+    return { term: item.term || null, termMonths: 0, recurring: false };
+  }
+
   function findLocalItem(line, catalog, licenses) {
     if (line.source === "catalog") return catalog.find((item) => item.sku === line.sku) || null;
     if (line.source === "license") return licenses.find((item) => item.sku === line.sku) || null;
@@ -38,6 +55,8 @@
     const extraFactor = 1 - extraPct / 100;
     let monthlyPublicTotal = 0;
     let monthlyDiscountedTotal = 0;
+    let oneTimePublicTotal = 0;
+    let oneTimeDiscountedTotal = 0;
     let engagementTotalSum = 0;
 
     const responseLines = lines.map((line) => {
@@ -49,13 +68,27 @@
       const publicUnit = toNumber(item.publicPrice, 0);
       const standardPct = isPartner ? toNumber(item.discountPct, 0) : 0;
       const discountedUnit = publicUnit * (1 - standardPct / 100) * extraFactor;
-      const publicMonthly = publicUnit * quantity;
-      const monthlyTotal = discountedUnit * quantity;
-      const months = engagementMonths(item.engagement);
-      const engagementTotal = monthlyTotal * months;
+      const { term, termMonths, recurring } = termInfo(item);
 
-      monthlyPublicTotal += publicMonthly;
-      monthlyDiscountedTotal += monthlyTotal;
+      let monthlyTotal = 0;
+      let oneTimeTotal = 0;
+      let lineEngagementMonths = 0;
+      let engagementTotal = 0;
+      if (recurring) {
+        // Prix natif amorti sur les mois couverts -> mensuel équivalent.
+        const months = termMonths || 1;
+        monthlyTotal = (discountedUnit / months) * quantity;
+        lineEngagementMonths = source === "license" ? termMonths : engagementMonths(item.engagement);
+        engagementTotal = monthlyTotal * lineEngagementMonths;
+        monthlyPublicTotal += (publicUnit / months) * quantity;
+        monthlyDiscountedTotal += monthlyTotal;
+      } else {
+        // Coût ponctuel (perpétuel / one-shot) : compté une fois, hors projection.
+        oneTimeTotal = discountedUnit * quantity;
+        engagementTotal = oneTimeTotal;
+        oneTimePublicTotal += publicUnit * quantity;
+        oneTimeDiscountedTotal += oneTimeTotal;
+      }
       engagementTotalSum += engagementTotal;
 
       return {
@@ -67,11 +100,18 @@
         public_unit_price: roundUnit(publicUnit),
         discounted_unit_price: roundUnit(discountedUnit),
         standard_discount_percent: roundMoney(standardPct),
+        term: term || null,
+        term_months: termMonths,
+        recurring,
         monthly_total: roundMoney(monthlyTotal),
-        engagement_months: months,
+        one_time_total: roundMoney(oneTimeTotal),
+        engagement_months: lineEngagementMonths,
         engagement_total: roundMoney(engagementTotal),
       };
     });
+
+    const periodPublicTotal = monthlyPublicTotal * period + oneTimePublicTotal;
+    const periodDiscountedTotal = monthlyDiscountedTotal * period + oneTimeDiscountedTotal;
 
     return {
       status: "success",
@@ -82,9 +122,10 @@
       lines: responseLines,
       monthly_public_total: roundMoney(monthlyPublicTotal),
       monthly_discounted_total: roundMoney(monthlyDiscountedTotal),
-      period_public_total: roundMoney(monthlyPublicTotal * period),
-      period_discounted_total: roundMoney(monthlyDiscountedTotal * period),
-      savings_total: roundMoney((monthlyPublicTotal - monthlyDiscountedTotal) * period),
+      one_time_total: roundMoney(oneTimeDiscountedTotal),
+      period_public_total: roundMoney(periodPublicTotal),
+      period_discounted_total: roundMoney(periodDiscountedTotal),
+      savings_total: roundMoney(periodPublicTotal - periodDiscountedTotal),
       total_on_engagement: roundMoney(engagementTotalSum),
       local_fallback: true,
     };

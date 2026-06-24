@@ -15,7 +15,7 @@ const CATALOG = [
   },
 ];
 const LICENSES = [
-  { sku: "LIC-1", source: "license", name: "Licence", unit: "licence", publicPrice: 20, discountPct: 0 },
+  { sku: "LIC-1", source: "license", name: "Licence", unit: "licence", publicPrice: 20, discountPct: 0, term: "monthly" },
 ];
 const LINES = [
   { sku: "COMPUTE-1", source: "catalog", quantity: 2 },
@@ -94,4 +94,55 @@ test("engagement parser falls back to one month", () => {
   assert.equal(engagementMonths("36 mois"), 36);
   assert.equal(engagementMonths("Aucun"), 1);
   assert.equal(engagementMonths(""), 1);
+});
+
+// Bug L4 (miroir backend) : terme tarifaire des licences (annual / multiyear / perpétuel).
+test("local quote amortizes an annual license to its monthly equivalent", () => {
+  const quote = calculateLocalQuote({
+    periodMonths: 12,
+    catalog: [],
+    licenses: [{ sku: "LIC-A", source: "license", name: "Annuelle", unit: "licence", publicPrice: 7551.91, discountPct: 0, term: "annual", engagement: 1 }],
+    lines: [{ sku: "LIC-A", source: "license", quantity: 1 }],
+  });
+  const line = quote.lines[0];
+
+  assert.equal(line.recurring, true);
+  assert.equal(line.term_months, 12);
+  assert.equal(line.public_unit_price, 7551.91); // prix natif annuel conservé
+  assert.equal(line.monthly_total, 629.33); // 7551.91 / 12 (mensuel amorti)
+  assert.equal(line.one_time_total, 0);
+  assert.equal(quote.monthly_discounted_total, 629.33);
+  assert.equal(quote.period_discounted_total, 7551.91); // 12 mois = 1 an (et NON 90 622,92)
+  assert.equal(quote.one_time_total, 0);
+  assert.equal(line.engagement_total, 7551.91);
+});
+
+test("local quote uses engagement years for a multiyear license", () => {
+  const quote = calculateLocalQuote({
+    periodMonths: 36,
+    catalog: [],
+    licenses: [{ sku: "LIC-M", source: "license", name: "Pluri", unit: "licence", publicPrice: 14706.34, discountPct: 0, term: "multiyear", engagement: 3 }],
+    lines: [{ sku: "LIC-M", source: "license", quantity: 1 }],
+  });
+  const line = quote.lines[0];
+
+  assert.equal(line.term_months, 36); // 3 ans × 12, pas le suffixe SKU
+  assert.equal(line.monthly_total, 408.51); // 14706.34 / 36
+  assert.equal(quote.period_discounted_total, 14706.34); // 36 mois = le bundle (et NON 529 428)
+  assert.equal(quote.one_time_total, 0);
+});
+
+test("local quote treats a perpetual license as a one-time cost, invariant to projection", () => {
+  const licenses = [{ sku: "LIC-P", source: "license", name: "Perp", unit: "licence", publicPrice: 161.48, discountPct: 0, term: "", engagement: "Perpetuel" }];
+  const lines = [{ sku: "LIC-P", source: "license", quantity: 4 }];
+  const q12 = calculateLocalQuote({ periodMonths: 12, catalog: [], licenses, lines });
+  const q60 = calculateLocalQuote({ periodMonths: 60, catalog: [], licenses, lines });
+
+  assert.equal(q12.lines[0].recurring, false);
+  assert.equal(q12.lines[0].monthly_total, 0);
+  assert.equal(q12.lines[0].one_time_total, 645.92); // 161.48 × 4
+  assert.equal(q12.monthly_discounted_total, 0);
+  assert.equal(q12.one_time_total, 645.92);
+  assert.equal(q12.period_discounted_total, 645.92); // compté une seule fois
+  assert.equal(q60.period_discounted_total, 645.92); // INVARIANT à la projection
 });

@@ -463,9 +463,29 @@ const engagementMonths = (str) => {
 };
 
 const termLabel = (t) => {
-  const map = { monthly: "Mensuel", yearly: "Annuel", annual: "Annuel", one_shot: "Ponctuel", oneshot: "Ponctuel" };
+  const map = { monthly: "Mensuel", yearly: "Annuel", annual: "Annuel", multiyear: "Pluriannuel", one_shot: "Ponctuel", oneshot: "Ponctuel" };
   return map[String(t || "").toLowerCase()] || (t ? String(t) : "");
 };
+
+// Suffixe de terme pour un prix natif récurrent (« / an », « / 3 ans », « / mois »).
+function lineTermSuffix(ql) {
+  if (!ql || ql.recurring === false) return "";
+  const t = String(ql.term || "").toLowerCase();
+  if (t === "annual") return " / an";
+  if (t === "multiyear") return ` / ${Math.max(1, Math.round((ql.term_months || 12) / 12))} ans`;
+  return " / mois";
+}
+
+// Mot de terme pour le détail de ligne (annuel, pluriannuel, perpétuel, mensuel…).
+function lineTermWord(ql) {
+  if (!ql) return "";
+  if (ql.recurring === false) return "perpétuel";
+  const t = String(ql.term || "").toLowerCase();
+  if (t === "annual") return "annuel";
+  if (t === "multiyear") return `${Math.max(1, Math.round((ql.term_months || 12) / 12))} ans`;
+  if (ql.source === "catalog" && ql.engagement_months > 1) return `engagement ${ql.engagement_months} mois`;
+  return "mensuel";
+}
 
 /* ---------- Données ---------- */
 
@@ -698,6 +718,7 @@ function normalizeLicense(item) {
     edition: item.edition || "",
     unit: item.unit || "licence",
     term: pricing.term || "",
+    engagement: pricing.engagement, // durée (années) pour le pluriannuel ; sert au miroir term-aware
     publicPrice,
     discountPct: pct,
     discountedPrice: publicPrice * (1 - pct / 100),
@@ -1487,43 +1508,65 @@ function renderSummaryLines() {
     .map((l) => {
       const ql = quoteLineFor(l.sku, l.source);
       const unit = ql?.unit || l.unit || "unité";
-      const unitPrice = ql ? ql.discounted_unit_price : null;
-      const monthly = ql ? ql.monthly_total : null;
-      const publicMonthly = ql ? ql.public_unit_price * ql.quantity : null;
-      const showPub = publicMonthly !== null && monthly !== null && publicMonthly > monthly + 0.001;
-      const sub = unitPrice !== null ? `${num(l.quantity)} × ${money(unitPrice)} / ${esc(unit)}` : `${num(l.quantity)} × ${esc(unit)}`;
-      // Détail des remises et de l'engagement appliqués à la ligne (issus de l'API).
+      const recurring = ql ? ql.recurring !== false : true;
+      const months = ql?.term_months || 1;
+      const nativePub = ql ? ql.public_unit_price : null; // prix natif public (par terme)
+      const nativeNet = ql ? ql.discounted_unit_price : null;
+      const monthlyNet = ql ? ql.monthly_total : null; // mensuel amorti (récurrent) ou 0
+      const oneTime = ql ? ql.one_time_total : null; // coût ponctuel ou 0
+      const headlineNet = ql ? (recurring ? monthlyNet : oneTime) : null;
+      // Prix public ramené au même horizon que le net affiché (mensuel amorti / ponctuel).
+      const headlinePub = ql ? (recurring ? (nativePub / months) * l.quantity : nativePub * l.quantity) : null;
+      const showPub = headlinePub !== null && headlineNet !== null && headlinePub > headlineNet + 0.001;
+      const engTot = ql && ql.engagement_total ? ql.engagement_total : null;
+      const showEng = !!(ql && recurring && engTot && ql.engagement_months > 1);
+
+      const sub = ql ? `${num(l.quantity)} × ${money(nativeNet)}${lineTermSuffix(ql)}` : `${num(l.quantity)} × ${esc(unit)}`;
+
+      // Chips récap (remises + nature du terme).
       const meta = [];
       if (ql && ql.standard_discount_percent > 0) meta.push(`<span class="cl-chip cl-chip--std">−${num(ql.standard_discount_percent)}% partenaire</span>`);
-      if (state.partner && state.discount > 0) meta.push(`<span class="cl-chip cl-chip--com">−${num(state.discount)}% engagement</span>`);
-      if (ql && ql.engagement_months > 1) meta.push(`<span class="cl-chip cl-chip--eng">engagement ${num(ql.engagement_months)} mois</span>`);
-      const engTot = ql && ql.engagement_total ? ql.engagement_total : null;
-      // Détail exhaustif par ligne (tous les champs fournis par l'API).
+      if (state.partner && state.discount > 0 && recurring) meta.push(`<span class="cl-chip cl-chip--com">−${num(state.discount)}% engagement</span>`);
+      if (ql && !recurring) meta.push(`<span class="cl-chip cl-chip--eng">ponctuel</span>`);
+      else if (ql && months > 1) meta.push(`<span class="cl-chip cl-chip--eng">${esc(lineTermWord(ql))}</span>`);
+
+      // Détail exhaustif par ligne (term-aware). En mode public (aucune remise), on
+      // n'affiche PAS de « PU net » dupliqué ni de prix barré identique.
       let details = "";
       if (ql) {
-        const pub = ql.public_unit_price;
         const std = ql.standard_discount_percent || 0;
         const com = state.partner ? state.discount || 0 : 0;
-        const afterStd = pub * (1 - std / 100);
-        const monthlySaving = publicMonthly !== null && monthly !== null ? publicMonthly - monthly : 0;
+        const afterStd = nativePub * (1 - std / 100);
+        const hasDisc = std > 0 || com > 0;
         const row = (lbl, val, cls = "") =>
           `<div class="cld-row ${cls}"><span class="cld-lbl">${esc(lbl)}</span><span class="cld-val">${val}</span></div>`;
         const rows = [];
-        rows.push(row("Prix public unitaire", `${esc(money(pub))} <small>/ ${esc(unit)}</small>`));
+        rows.push(row("Prix unitaire", `${esc(money(nativePub))} <small>/ ${esc(unit)} · ${esc(lineTermWord(ql))}</small>`));
         if (std > 0) {
           rows.push(row("Remise partenaire", `<span class="cld-neg">−${num(std)} %</span>`));
           rows.push(row("Après remise partenaire", `${esc(money(afterStd))} <small>/ ${esc(unit)}</small>`));
         }
         if (com > 0) rows.push(row("Remise engagement", `<span class="cld-neg">−${num(com)} %</span>`));
-        rows.push(row("PU net", `${esc(money(unitPrice))} <small>/ ${esc(unit)}</small>`, "cld-row--accent"));
+        if (hasDisc) rows.push(row("PU net", `${esc(money(nativeNet))} <small>/ ${esc(unit)}</small>`, "cld-row--accent"));
         rows.push(row("Quantité", `× ${num(l.quantity)}`));
-        if (publicMonthly !== null) rows.push(row("Mensuel public", esc(money(publicMonthly))));
-        if (monthly !== null) rows.push(row("Mensuel net", `${esc(money(monthly))} <small>/mois</small>`, "cld-row--strong"));
-        if (monthlySaving > 0.005) rows.push(row("Économie / mois", `<span class="cld-save">−${esc(money(monthlySaving))}</span>`));
-        if (ql.engagement_months > 1) rows.push(row("Engagement", `${num(ql.engagement_months)} mois`));
-        if (engTot !== null) rows.push(row("Total sur l'engagement", esc(money(engTot)), "cld-row--strong"));
+        if (recurring && months > 1) {
+          rows.push(row("Mensuel équivalent", `${esc(money(monthlyNet))} <small>(${esc(money(nativeNet))} ÷ ${num(months)} mois)</small>`, "cld-row--strong"));
+        } else if (recurring) {
+          rows.push(row("Mensuel net", `${esc(money(monthlyNet))} <small>/mois</small>`, "cld-row--strong"));
+        } else {
+          rows.push(row("Coût ponctuel", `${esc(money(oneTime))} <small>à l'achat</small>`, "cld-row--strong"));
+        }
+        if (showEng) rows.push(row("Total sur l'engagement", esc(money(engTot)), "cld-row--strong"));
         details = `<div class="cart-line__details">${rows.join("")}</div>`;
       }
+
+      const totalHtml =
+        headlineNet === null
+          ? "…"
+          : recurring
+            ? `${esc(money(monthlyNet))}<span class="per">/mois</span>`
+            : `${esc(money(oneTime))}<span class="per">ponctuel</span>`;
+
       return `
         <div class="cart-line">
           <div>
@@ -1532,9 +1575,9 @@ function renderSummaryLines() {
             ${meta.length ? `<div class="cart-line__meta">${meta.join("")}</div>` : ""}
           </div>
           <div class="cart-line__total">
-            ${showPub ? `<span class="pub">${esc(money(publicMonthly))}</span>` : ""}
-            ${monthly !== null ? `${esc(money(monthly))}<span class="per">/mois</span>` : "…"}
-            ${engTot !== null ? `<span class="eng-tot">${esc(money(engTot))} sur engagement</span>` : ""}
+            ${showPub ? `<span class="pub">${esc(money(headlinePub))}</span>` : ""}
+            ${totalHtml}
+            ${showEng ? `<span class="eng-tot">${esc(money(engTot))} sur engagement</span>` : ""}
           </div>
           <div class="cart-line__ctrl">
             ${stepper(l.sku, l.source, l.quantity)}
@@ -1594,12 +1637,15 @@ function renderSummaryTotals() {
     )
     .join("");
 
-  // Répartition des remises (mensuel) : part partenaire (catalogue) vs part engagement.
+  // Répartition des remises (mensuel) — lignes récurrentes, au mensuel AMORTI
+  // (cohérent avec monthly_discounted_total). Les ponctuels sont exclus.
   let stdSaving = 0;
   let afterStd = 0;
   q.lines.forEach((ql) => {
-    const pubM = ql.public_unit_price * ql.quantity;
-    const afterStdM = ql.public_unit_price * (1 - (ql.standard_discount_percent || 0) / 100) * ql.quantity;
+    if (ql.recurring === false) return;
+    const months = ql.term_months || 1;
+    const pubM = (ql.public_unit_price / months) * ql.quantity;
+    const afterStdM = (ql.public_unit_price * (1 - (ql.standard_discount_percent || 0) / 100) / months) * ql.quantity;
     stdSaving += pubM - afterStdM;
     afterStd += afterStdM;
   });
@@ -1609,17 +1655,23 @@ function renderSummaryTotals() {
   if (stdSaving > 0.005) breakdown.push(`<div class="total-row total-row--sub"><span class="lbl">↳ dont remise partenaire</span><span class="val">−${esc(money(stdSaving))}</span></div>`);
   if (comSaving > 0.005) breakdown.push(`<div class="total-row total-row--sub"><span class="lbl">↳ dont remise engagement</span><span class="val">−${esc(money(comSaving))}</span></div>`);
 
+  // « Mensuel public » barré n'a de sens qu'en présence d'une remise récurrente
+  // (sinon il est identique au net -> bruit en mode public).
+  const showMonthlyPublic = q.monthly_public_total > q.monthly_discounted_total + 0.005;
+  const hasOneTime = q.one_time_total > 0.005;
+
   root.innerHTML = `
     ${byFamily.size > 1 ? `<div class="fam-block"><div class="fam-block__title">Répartition mensuelle</div>${famRows}</div>` : ""}
-    <div class="total-row total-row--muted"><span class="lbl">Mensuel public</span><span class="val">${esc(money(q.monthly_public_total))}</span></div>
+    ${showMonthlyPublic ? `<div class="total-row total-row--muted"><span class="lbl">Mensuel public</span><span class="val">${esc(money(q.monthly_public_total))}</span></div>` : ""}
     ${breakdown.join("")}
     <div class="total-row total-row--main">
       <span class="lbl">Total mensuel net</span>
       <span class="val">${esc(money(q.monthly_discounted_total))}<span class="per per--main">/mois</span></span>
     </div>
+    ${hasOneTime ? `<div class="total-row total-row--onetime"><span class="lbl">Coûts ponctuels <small>(à l'achat)</small></span><span class="val">${esc(money(q.one_time_total))}</span></div>` : ""}
     <div class="total-row"><span class="lbl">Projection ${esc(monthsLabel)}</span><span class="val">${esc(money(q.period_discounted_total))}</span></div>
     <div class="total-row"><span class="lbl">Total à l'engagement</span><span class="val">${esc(money(q.total_on_engagement))}</span></div>
-    <div class="total-row total-row--save"><span class="lbl">Économie sur ${esc(monthsLabel)}</span><span class="val">${esc(money(q.savings_total))}</span></div>
+    ${q.savings_total > 0.005 ? `<div class="total-row total-row--save"><span class="lbl">Économie sur ${esc(monthsLabel)}</span><span class="val">${esc(money(q.savings_total))}</span></div>` : ""}
     ${state.quoteSource === "local" ? `<div class="total-sub">Calcul local hors-ligne · export indisponible jusqu'au retour de l'API</div>` : ""}
     ${state.quoteLoading ? `<div class="total-sub">Mise à jour…</div>` : ""}`;
 }
