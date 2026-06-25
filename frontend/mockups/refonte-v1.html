@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Calculateur Cloud Temple — Maquette refonte v1 (light + vert)</title>
+<style>
+  /* ============================================================
+     MAQUETTE STATIQUE — refonte UX (light + vert)
+     Données factices. Aucun lien avec le code de production.
+     Réfs d'inspiration : StackIt Compute / Azure Pricing.
+     ============================================================ */
+  :root {
+    /* Fonds clairs */
+    --bg: #f4f6f9;
+    --surface: #ffffff;
+    --surface-2: #f0f3f7;
+    --surface-3: #e8edf3;
+    /* Bordures */
+    --border: #e2e8f0;
+    --border-strong: #cbd5e1;
+    /* Textes (contrastes AA sur blanc) */
+    --ink: #131b27;        /* titres quasi-noir */
+    --muted: #475569;      /* texte secondaire ~7:1 */
+    --faint: #64748b;      /* texte tertiaire ~4.7:1 (A2 corrigé) */
+    /* Vert primaire Cloud Temple */
+    --green: #16a06a;
+    --green-dark: #0f7d52;
+    --green-soft: #e6f5ee;
+    --green-line: #b7e3cd;
+    /* Navy (toggles actifs, façon portail my-partner) */
+    --navy: #1e293b;
+    /* Accents statut */
+    --blue: #2563eb;
+    --blue-soft: #e6effe;
+    --violet: #7c3aed;
+    --violet-soft: #f1e9fe;
+    --danger: #dc2626;
+    --danger-soft: #fde8e8;
+    --warn: #d97706;
+    /* Divers */
+    --radius: 14px;
+    --radius-sm: 10px;
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
+    --shadow: 0 4px 16px -6px rgba(15, 23, 42, 0.12);
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Focus clavier global (A3) */
+  :focus-visible {
+    outline: 2px solid var(--green);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  button { font-family: inherit; }
+
+  /* ============ HEADER ============ */
+  .app-header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand__logo {
+    width: 30px; height: 30px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--green), var(--green-dark));
+    display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 16px;
+  }
+  .brand__name { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+  .brand__sub { color: var(--faint); font-size: 12px; }
+  .header-spacer { flex: 1; }
+
+  .freshness {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 12px; color: var(--muted);
+    padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--surface-2);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+
+  /* Toggle pill (mode partenaire) — navy actif façon portail */
+  .pill-toggle {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 7px 14px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--border-strong); background: var(--surface);
+    font-size: 13px; font-weight: 600; color: var(--muted);
+    transition: all .15s ease;
+  }
+  .pill-toggle .switch {
+    width: 34px; height: 19px; border-radius: 999px; background: var(--border-strong);
+    position: relative; transition: background .15s ease; flex-shrink: 0;
+  }
+  .pill-toggle .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px;
+    border-radius: 50%; background: #fff; transition: transform .15s ease;
+    box-shadow: 0 1px 2px rgba(0,0,0,.2);
+  }
+  .pill-toggle.is-on { color: var(--ink); border-color: var(--navy); }
+  .pill-toggle.is-on .switch { background: var(--navy); }
+  .pill-toggle.is-on .switch::after { transform: translateX(15px); }
+
+  /* ============ ONGLETS COTATIONS ============ */
+  .quote-tabs {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .quote-tab {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 14px; border: none; background: transparent; cursor: pointer;
+    font-size: 13px; font-weight: 600; color: var(--muted);
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .quote-tab:hover { color: var(--ink); }
+  .quote-tab.is-active { color: var(--green-dark); border-bottom-color: var(--green); }
+  .quote-tab__count {
+    font-size: 11px; background: var(--surface-3); color: var(--muted);
+    padding: 1px 7px; border-radius: 999px; font-weight: 700;
+  }
+  .quote-tab.is-active .quote-tab__count { background: var(--green-soft); color: var(--green-dark); }
+  .quote-tab__close {
+    display: grid; place-items: center; width: 18px; height: 18px;
+    border: none; background: transparent; border-radius: 5px; cursor: pointer;
+    color: var(--faint); padding: 0; font-size: 14px; line-height: 1;
+  }
+  .quote-tab__close:hover { background: var(--danger-soft); color: var(--danger); }
+  .quote-tab__add {
+    border: none; background: transparent; cursor: pointer; color: var(--muted);
+    font-size: 18px; padding: 6px 10px; border-radius: var(--radius-sm); font-weight: 600;
+  }
+  .quote-tab__add:hover { background: var(--surface-2); color: var(--green-dark); }
+
+  /* ============ LAYOUT 3 COLONNES ============ */
+  .layout {
+    display: grid;
+    grid-template-columns: 230px 1fr 380px;
+    gap: 0;
+    align-items: start;
+    min-height: calc(100vh - 110px);
+  }
+
+  /* ---- Sidebar gauche ---- */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    padding: 18px 12px;
+    position: sticky; top: 110px;
+    height: calc(100vh - 110px);
+    overflow-y: auto;
+    background: var(--surface);
+  }
+  .sidebar__title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--faint); font-weight: 700; padding: 0 10px 8px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 11px; width: 100%;
+    padding: 9px 11px; border: none; background: transparent; cursor: pointer;
+    border-radius: var(--radius-sm); font-size: 13.5px; font-weight: 600; color: var(--muted);
+    text-align: left; margin-bottom: 2px;
+  }
+  .nav-item:hover { background: var(--surface-2); color: var(--ink); }
+  .nav-item.is-active { background: var(--green-soft); color: var(--green-dark); }
+  .nav-item .ico { width: 18px; text-align: center; font-size: 15px; }
+  .nav-item .nav-count {
+    margin-left: auto; font-size: 11px; font-weight: 700;
+    background: var(--navy); color: #fff; border-radius: 999px; padding: 1px 7px;
+  }
+  .nav-item.is-active .nav-count { background: var(--green); }
+
+  /* ---- Zone centrale ---- */
+  .main { padding: 22px 24px; }
+  .main__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .main__title { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+  .main__desc { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+
+  .toolbar { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+  .search {
+    flex: 1; min-width: 200px; display: flex; align-items: center; gap: 8px;
+    padding: 9px 13px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+    background: var(--surface);
+  }
+  .search input { border: none; outline: none; flex: 1; font-size: 13.5px; background: transparent; color: var(--ink); }
+  .search .ico { color: var(--faint); }
+  .select {
+    padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+    background: var(--surface); font-size: 13px; color: var(--ink); font-weight: 500; cursor: pointer;
+  }
+
+  .product-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .product-card {
+    border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+    padding: 16px; box-shadow: var(--shadow-sm); transition: border-color .15s, box-shadow .15s;
+  }
+  .product-card:hover { border-color: var(--green-line); box-shadow: var(--shadow); }
+  .product-card.is-open { grid-column: 1 / -1; border-color: var(--green-line); }
+  .pc__top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .pc__name { font-weight: 700; font-size: 14.5px; }
+  .pc__tag {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; font-weight: 700;
+    padding: 2px 8px; border-radius: 999px; background: var(--blue-soft); color: var(--blue);
+  }
+  .pc__tag.lic { background: var(--violet-soft); color: var(--violet); }
+  .pc__desc { color: var(--muted); font-size: 12.5px; margin: 7px 0 12px; }
+  .pc__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .pc__price { font-size: 13px; color: var(--faint); }
+  .pc__price b { color: var(--ink); font-size: 15px; }
+  .pc__actions { display: flex; align-items: center; gap: 8px; }
+
+  /* Specs en lecture seule (catalogue = SKU figés, pas de dimensionnement continu) */
+  .spec-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 12px; }
+  .spec-chip {
+    font-size: 11.5px; font-weight: 600; color: var(--muted);
+    background: var(--surface-2); border: 1px solid var(--border);
+    padding: 3px 9px; border-radius: 999px;
+  }
+  .spec-chip b { color: var(--ink); }
+  .pc__unit { font-size: 11px; color: var(--faint); font-weight: 600; }
+  .pc__partner-note { font-size: 11px; color: var(--green-dark); font-weight: 600; margin-top: 2px; }
+
+  /* Specs détaillées (carte dépliée) — lecture seule */
+  .spec-table { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border-strong); }
+  .spec-table .row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12.5px; border-bottom: 1px dashed var(--border); }
+  .spec-table .row:last-child { border-bottom: none; }
+  .spec-table .row span:first-child { color: var(--faint); }
+  .spec-table .row span:last-child { color: var(--ink); font-weight: 600; }
+
+  /* Sous-familles (Bare Metal / OpenIaaS / VMware) */
+  .subfamily { display: inline-flex; gap: 4px; background: var(--surface-3); border-radius: var(--radius-sm); padding: 3px; margin-bottom: 16px; }
+  .subfamily button { border: none; background: transparent; cursor: pointer; padding: 6px 13px; font-size: 12.5px; font-weight: 700; color: var(--muted); border-radius: 7px; }
+  .subfamily button.is-active { background: var(--surface); color: var(--green-dark); box-shadow: var(--shadow-sm); }
+
+  /* Encart pédagogique (dimensionnement = calculateur d'architecture, Phase 2) */
+  .callout {
+    display: flex; gap: 10px; align-items: flex-start;
+    background: var(--blue-soft); border: 1px solid #bcd4fb; border-radius: var(--radius-sm);
+    padding: 11px 13px; margin: 16px 0; font-size: 12.5px; color: #1e3a8a;
+  }
+  .callout .ico { font-size: 15px; }
+
+  .stepper { display: inline-flex; align-items: center; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; }
+  .stepper button { width: 30px; height: 32px; border: none; background: var(--surface-2); cursor: pointer; font-size: 16px; color: var(--muted); }
+  .stepper button:hover { background: var(--surface-3); color: var(--ink); }
+  .stepper input { width: 42px; height: 32px; border: none; text-align: center; font-size: 13px; font-weight: 600; color: var(--ink); -moz-appearance: textfield; }
+  .stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+  .btn {
+    border: none; border-radius: var(--radius-sm); padding: 8px 15px; font-size: 13px;
+    font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn--primary { background: var(--green); color: #fff; }
+  .btn--primary:hover { background: var(--green-dark); }
+  .btn--ghost { background: var(--surface-2); color: var(--ink); border: 1px solid var(--border); }
+  .btn--ghost:hover { background: var(--surface-3); }
+
+  /* Configurateur déplié (style StackIt) */
+  .configurator {
+    margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border-strong);
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;
+  }
+  .cfg-field label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; margin-bottom: 5px; }
+  .cfg-field .val { font-weight: 700; font-size: 14px; }
+  .cfg-field input[type=range] { width: 100%; accent-color: var(--green); }
+
+  /* ---- Panneau résumé droit ---- */
+  .summary {
+    border-left: 1px solid var(--border);
+    padding: 20px;
+    position: sticky; top: 110px;
+    height: calc(100vh - 110px);
+    overflow-y: auto;
+    background: var(--surface-2);
+  }
+  .summary__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .summary__title { font-size: 15px; font-weight: 700; }
+  .summary__badge { font-size: 11px; font-weight: 700; background: var(--green-soft); color: var(--green-dark); padding: 3px 9px; border-radius: 999px; }
+
+  .field-block { margin-bottom: 16px; }
+  .field-block > label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; margin-bottom: 6px; }
+  .field-block input[type=text] {
+    width: 100%; padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+    font-size: 13.5px; background: var(--surface); color: var(--ink);
+  }
+
+  /* Période segmented control */
+  .segmented { display: flex; background: var(--surface-3); border-radius: var(--radius-sm); padding: 3px; gap: 2px; }
+  .segmented button {
+    flex: 1; border: none; background: transparent; cursor: pointer; padding: 7px 4px;
+    font-size: 12.5px; font-weight: 700; color: var(--muted); border-radius: 7px;
+  }
+  .segmented button.is-active { background: var(--surface); color: var(--green-dark); box-shadow: var(--shadow-sm); }
+
+  /* Lignes panier repliables (fix L3) */
+  .cart-line { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); margin-bottom: 9px; overflow: hidden; }
+  .cart-line__head {
+    display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 12px;
+    border: none; background: transparent; cursor: pointer; text-align: left;
+  }
+  .cart-line__chevron { color: var(--faint); transition: transform .15s ease; font-size: 11px; }
+  .cart-line.is-open .cart-line__chevron { transform: rotate(90deg); }
+  .cart-line__info { flex: 1; min-width: 0; }
+  .cart-line__name { font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cart-line__meta { font-size: 11.5px; color: var(--faint); margin-top: 1px; }
+  .cart-line__price { text-align: right; flex-shrink: 0; }
+  .cart-line__price b { font-size: 13.5px; }
+  .cart-line__price span { display: block; font-size: 11px; color: var(--faint); }
+  .term-chip { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 1px 6px; border-radius: 999px; letter-spacing: .03em; }
+  .term-chip.annual { background: var(--blue-soft); color: var(--blue); }
+  .term-chip.monthly { background: var(--green-soft); color: var(--green-dark); }
+  .term-chip.perpetual { background: var(--violet-soft); color: var(--violet); }
+
+  .cart-line__details { padding: 0 12px 12px 33px; display: none; font-size: 12px; color: var(--muted); }
+  .cart-line.is-open .cart-line__details { display: block; }
+  .detail-row { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px dashed var(--border); }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-row .strike { text-decoration: line-through; color: var(--faint); margin-right: 6px; }
+  .detail-row .save { color: var(--green-dark); font-weight: 600; }
+
+  /* Totaux */
+  .totals { margin-top: 16px; padding-top: 16px; border-top: 2px solid var(--border); }
+  .total-row { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0; font-size: 13px; color: var(--muted); }
+  .total-row b { color: var(--ink); font-size: 14px; }
+  .total-row.grand { margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .total-row.grand .label { font-weight: 700; color: var(--ink); font-size: 14px; }
+  .total-row.grand .amount { font-size: 22px; font-weight: 800; color: var(--green-dark); }
+  .total-note { font-size: 11px; color: var(--faint); margin-top: 4px; }
+
+  .summary__actions { display: flex; gap: 8px; margin-top: 16px; }
+  .summary__actions .btn { flex: 1; justify-content: center; }
+
+  /* ============ FOOTER ============ */
+  .app-foot {
+    border-top: 1px solid var(--border); background: var(--surface);
+    padding: 9px 24px; font-size: 11.5px; color: var(--faint);
+    display: flex; align-items: center; gap: 14px;
+  }
+
+  .demo-flag {
+    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+    background: var(--navy); color: #fff; font-size: 11px; font-weight: 600;
+    padding: 6px 14px; border-radius: 999px; z-index: 50; opacity: .92;
+  }
+</style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand__logo">CT</div>
+      <div>
+        <div class="brand__name">Calculateur Cloud Temple</div>
+        <div class="brand__sub">Estimation de coût — Cloud souverain</div>
+      </div>
+    </div>
+    <div class="header-spacer"></div>
+    <div class="freshness"><span class="dot"></span> Données à jour · il y a 4 min</div>
+    <button class="pill-toggle" id="partnerToggle" aria-pressed="false">
+      <span class="switch"></span> Mode partenaire
+    </button>
+  </header>
+
+  <!-- ONGLETS COTATIONS -->
+  <nav class="quote-tabs" aria-label="Cotations">
+    <button class="quote-tab is-active">
+      <span>Projet Mairie de X</span>
+      <span class="quote-tab__count">3</span>
+      <button class="quote-tab__close" aria-label="Fermer la cotation Projet Mairie de X">×</button>
+    </button>
+    <button class="quote-tab">
+      <span>POC Datalab</span>
+      <span class="quote-tab__count">1</span>
+      <button class="quote-tab__close" aria-label="Fermer la cotation POC Datalab">×</button>
+    </button>
+    <button class="quote-tab__add" aria-label="Nouvelle cotation">+</button>
+  </nav>
+
+  <!-- LAYOUT 3 COLONNES -->
+  <div class="layout">
+
+    <!-- SIDEBAR GAUCHE -->
+    <aside class="sidebar">
+      <div class="sidebar__title">Catalogue</div>
+      <button class="nav-item is-active"><span class="ico">🖥️</span> Compute <span class="nav-count">1</span></button>
+      <button class="nav-item"><span class="ico">🌐</span> Réseau</button>
+      <button class="nav-item"><span class="ico">💾</span> Stockage</button>
+      <button class="nav-item"><span class="ico">⚙️</span> PaaS &amp; conteneurs</button>
+      <button class="nav-item"><span class="ico">🤖</span> LLMaaS</button>
+      <button class="nav-item"><span class="ico">🏢</span> Hébergement</button>
+      <button class="nav-item"><span class="ico">🛟</span> Sauvegarde &amp; PRA</button>
+      <button class="nav-item"><span class="ico">🧩</span> Services</button>
+      <div class="sidebar__title" style="margin-top:14px;">Logiciels</div>
+      <button class="nav-item"><span class="ico">🔑</span> Licences <span class="nav-count">2</span></button>
+    </aside>
+
+    <!-- ZONE CENTRALE -->
+    <main class="main">
+      <div class="main__head">
+        <div class="main__title">Compute</div>
+        <span class="pc__unit">20 références</span>
+      </div>
+      <div class="main__desc">Serveurs et instances de calcul. Chaque référence a des caractéristiques figées — on choisit une taille, on ne dimensionne pas en continu. Prix publics affichés.</div>
+
+      <div class="toolbar">
+        <div class="search">
+          <span class="ico">🔍</span>
+          <input type="text" placeholder="Rechercher dans Compute…" />
+        </div>
+      </div>
+
+      <!-- Sous-familles réelles du catalogue Compute -->
+      <div class="subfamily" role="group" aria-label="Sous-famille Compute">
+        <button class="is-active">Bare Metal</button>
+        <button>OpenIaaS</button>
+        <button>VMware</button>
+      </div>
+
+      <!-- Encart : le dimensionnement libre relève du calculateur d'architecture (Phase 2) -->
+      <div class="callout">
+        <span class="ico">💡</span>
+        <span>Besoin de dimensionner librement (vCPU / RAM / disque cibles) ? Ce sera le rôle du <b>calculateur d'architecture</b> (à venir), qui proposera une combinaison de ces références. Ici, on sélectionne des tailles existantes.</span>
+      </div>
+
+      <div class="product-grid">
+
+        <!-- Variante ECO -->
+        <div class="product-card">
+          <div class="pc__top">
+            <div>
+              <div class="pc__name">BM:V3:ECO</div>
+              <span class="pc__unit">facturation mensuelle · unité : Lame</span>
+            </div>
+            <span class="pc__tag">Bare Metal</span>
+          </div>
+          <div class="spec-chips">
+            <span class="spec-chip"><b>20</b> cœurs</span>
+            <span class="spec-chip"><b>384</b> Go RAM</span>
+            <span class="spec-chip">Intel Silver 4114</span>
+            <span class="spec-chip">2,2 GHz</span>
+          </div>
+          <div class="pc__foot">
+            <div class="pc__price"><b>1 153,97 €</b> / mois</div>
+            <div class="pc__actions">
+              <div class="stepper">
+                <button aria-label="Diminuer la quantité">−</button>
+                <input type="number" value="1" aria-label="Quantité" />
+                <button aria-label="Augmenter la quantité">+</button>
+              </div>
+              <button class="btn btn--primary">Ajouter</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Variante PERF1 -->
+        <div class="product-card">
+          <div class="pc__top">
+            <div>
+              <div class="pc__name">BM:V3:PERF1</div>
+              <span class="pc__unit">facturation mensuelle · unité : Lame</span>
+            </div>
+            <span class="pc__tag">Bare Metal</span>
+          </div>
+          <div class="spec-chips">
+            <span class="spec-chip"><b>16</b> cœurs</span>
+            <span class="spec-chip"><b>384</b> Go RAM</span>
+            <span class="spec-chip">Intel 5315Y</span>
+            <span class="spec-chip">3,2 GHz</span>
+          </div>
+          <div class="pc__foot">
+            <div class="pc__price"><b>1 455,24 €</b> / mois</div>
+            <div class="pc__actions">
+              <div class="stepper">
+                <button aria-label="Diminuer la quantité">−</button>
+                <input type="number" value="1" aria-label="Quantité" />
+                <button aria-label="Augmenter la quantité">+</button>
+              </div>
+              <button class="btn btn--primary">Ajouter</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Variante ADV (carte dépliée = détail specs en lecture seule) -->
+        <div class="product-card is-open">
+          <div class="pc__top">
+            <div>
+              <div class="pc__name">BM:V3:ADV</div>
+              <span class="pc__unit">facturation mensuelle · unité : Lame</span>
+            </div>
+            <span class="pc__tag">Bare Metal</span>
+          </div>
+          <div class="spec-chips">
+            <span class="spec-chip"><b>48</b> cœurs</span>
+            <span class="spec-chip"><b>768</b> Go RAM</span>
+            <span class="spec-chip">Intel Gold 6342</span>
+            <span class="spec-chip">2,8 GHz</span>
+          </div>
+          <div class="spec-table">
+            <div class="row"><span>Cœurs / threads</span><span>48 / 96</span></div>
+            <div class="row"><span>Mémoire vive</span><span>768 Go</span></div>
+            <div class="row"><span>Processeur</span><span>Intel Gold 6342 · 2,8 → 3,5 GHz</span></div>
+            <div class="row"><span>Engagement</span><span>1 mois (mensuel récurrent)</span></div>
+          </div>
+          <div class="pc__foot" style="margin-top:14px;">
+            <div>
+              <div class="pc__price"><b>1 979,60 €</b> / mois</div>
+              <div class="pc__partner-note">Mode partenaire : 1 484,70 € / mois (−25 %)</div>
+            </div>
+            <div class="pc__actions">
+              <div class="stepper">
+                <button aria-label="Diminuer la quantité">−</button>
+                <input type="number" value="1" aria-label="Quantité" />
+                <button aria-label="Augmenter la quantité">+</button>
+              </div>
+              <button class="btn btn--primary">Ajouter</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- PANNEAU RÉSUMÉ DROIT -->
+    <aside class="summary" aria-label="Résumé de la cotation">
+      <div class="summary__head">
+        <div class="summary__title">Résumé</div>
+        <span class="summary__badge">3 lignes</span>
+      </div>
+
+      <div class="field-block">
+        <label for="projName">Nom du projet</label>
+        <input type="text" id="projName" value="Projet Mairie de X" />
+      </div>
+
+      <div class="field-block">
+        <label>Durée d'engagement</label>
+        <div class="segmented" role="group" aria-label="Période de projection">
+          <button class="is-active">12 mois</button>
+          <button>24 mois</button>
+          <button>36 mois</button>
+          <button>60 mois</button>
+        </div>
+      </div>
+
+      <!-- Lignes panier repliables (L3) — illustre le term-aware (L4) -->
+      <div>
+        <!-- Ligne mensuelle -->
+        <div class="cart-line is-open">
+          <button class="cart-line__head" aria-expanded="true">
+            <span class="cart-line__chevron">▶</span>
+            <span class="cart-line__info">
+              <span class="cart-line__name">VM Standard ×2</span>
+              <span class="cart-line__meta"><span class="term-chip monthly">Mensuel</span> 8 vCPU / 32 Go</span>
+            </span>
+            <span class="cart-line__price"><b>378,00 €</b><span>/ mois</span></span>
+          </button>
+          <div class="cart-line__details">
+            <div class="detail-row"><span>Prix public unitaire</span><span>189,00 € / mois</span></div>
+            <div class="detail-row"><span>Quantité</span><span>2</span></div>
+            <div class="detail-row"><span>Récurrence</span><span>Mensuelle</span></div>
+          </div>
+        </div>
+
+        <!-- Ligne annuelle (L4 : PU/an + amorti /mois) -->
+        <div class="cart-line">
+          <button class="cart-line__head" aria-expanded="false">
+            <span class="cart-line__chevron">▶</span>
+            <span class="cart-line__info">
+              <span class="cart-line__name">FortiAnalyzer 150G ×1</span>
+              <span class="cart-line__meta"><span class="term-chip annual">Annuel</span> souscription 12 mois</span>
+            </span>
+            <span class="cart-line__price"><b>629,33 €</b><span>/ mois amorti</span></span>
+          </button>
+          <div class="cart-line__details">
+            <div class="detail-row"><span>Prix public</span><span>7 551,91 € / an</span></div>
+            <div class="detail-row"><span>Mensuel amorti (÷12)</span><span>629,33 € / mois</span></div>
+            <div class="detail-row"><span>Terme</span><span>Annuel</span></div>
+          </div>
+        </div>
+
+        <!-- Ligne perpétuelle (L4 : coût ponctuel hors projection) -->
+        <div class="cart-line">
+          <button class="cart-line__head" aria-expanded="false">
+            <span class="cart-line__chevron">▶</span>
+            <span class="cart-line__info">
+              <span class="cart-line__name">FortiAP 221E ×4</span>
+              <span class="cart-line__meta"><span class="term-chip perpetual">Perpétuel</span> achat ponctuel</span>
+            </span>
+            <span class="cart-line__price"><b>645,92 €</b><span>une fois</span></span>
+          </button>
+          <div class="cart-line__details">
+            <div class="detail-row"><span>Prix public unitaire</span><span>161,48 €</span></div>
+            <div class="detail-row"><span>Quantité</span><span>4</span></div>
+            <div class="detail-row"><span>Nature</span><span>Coût ponctuel (hors projection)</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Totaux : séparation mensuel récurrent / ponctuel / engagement (L4) -->
+      <div class="totals" aria-live="polite">
+        <div class="total-row"><span>Mensuel récurrent</span><b>1 007,33 €</b></div>
+        <div class="total-row"><span>Coûts ponctuels</span><b>645,92 €</b></div>
+        <div class="total-row grand">
+          <span class="label">Total sur 12 mois</span>
+          <span class="amount">12 733,88 €</span>
+        </div>
+        <div class="total-note">= (1 007,33 € × 12) + 645,92 € ponctuel. Mode public, prix sans remise.</div>
+      </div>
+
+      <div class="summary__actions">
+        <button class="btn btn--ghost">Exporter</button>
+        <button class="btn btn--primary">Enregistrer</button>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="app-foot">
+    <span class="dot"></span>
+    <span>Source : base locale · 136 produits · 8 806 licences</span>
+    <span style="margin-left:auto;">v0.2-maquette · light + vert</span>
+  </footer>
+
+  <div class="demo-flag">MAQUETTE STATIQUE — données factices, hors production</div>
+
+<script>
+  // Interactions minimales de démo (pas la logique de prod) ---------------
+
+  // Toggle mode partenaire (pill navy)
+  var partner = document.getElementById('partnerToggle');
+  partner.addEventListener('click', function () {
+    var on = partner.classList.toggle('is-on');
+    partner.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+
+  // Repli/dépli des lignes du panier (fix L3)
+  document.querySelectorAll('.cart-line__head').forEach(function (head) {
+    head.addEventListener('click', function () {
+      var line = head.closest('.cart-line');
+      var open = line.classList.toggle('is-open');
+      head.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  });
+
+  // Période segmented control
+  document.querySelectorAll('.segmented button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      b.parentNode.querySelectorAll('button').forEach(function (x) { x.classList.remove('is-active'); });
+      b.classList.add('is-active');
+    });
+  });
+
+  // Sélecteur de sous-famille (Bare Metal / OpenIaaS / VMware)
+  document.querySelectorAll('.subfamily button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      b.parentNode.querySelectorAll('button').forEach(function (x) { x.classList.remove('is-active'); });
+      b.classList.add('is-active');
+    });
+  });
+</script>
+</body>
+</html>
