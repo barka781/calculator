@@ -120,6 +120,8 @@ const I = {
     '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
   licenses:
     '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H4z"/><path d="M4 20h16M9 16v4M15 16v4"/></svg>',
+  bulb:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1h6c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/></svg>',
 };
 const familyIcon = (f) => I[f.icon] || I.services;
 
@@ -147,7 +149,10 @@ const state = {
   catalog: [],
   catalogByFamily: new Map(),
   search: "",
-  expanded: new Set(),
+  activeFamily: "compute", // famille affichée dans la colonne centrale (navigation sidebar)
+  subfamily: "", // sous-famille active (sub_type) ; "" = toutes
+  openCards: new Set(), // SKU des cartes produit dépliées (détail specs)
+  openLines: new Set(), // clés des lignes de devis dépliées (détail term-aware)
   lic: { all: [], loaded: false, loading: false, error: "", query: "", vendor: "", term: "", page: 1 },
   quotes: quoteBoot.quotes,
   activeQuoteId: quoteBoot.activeQuoteId,
@@ -632,6 +637,7 @@ function normalizeCatalog(item) {
     baseQty: Number(ps.base_quantity || item.base_quantity || 1) || 1,
     minQty: Number(ps.min_quantity || 1) || 1,
     snc: !!meta.snc,
+    specs, // specs brutes conservées pour les puces/table en lecture seule (Lot 2)
     tags: tagsFor(item, specs),
   };
 }
@@ -649,6 +655,91 @@ function tagsFor(item, specs) {
   return out.slice(0, 4);
 }
 const prettify = (s) => String(s || "").replaceAll("_", " ");
+
+/* ---------- Specs produit (lecture seule, génériques par famille) ----------
+   Le catalogue est en SKU figés : on affiche les specs telles quelles, sans
+   dimensionnement continu. Couverture hétérogène selon la famille (riche sur
+   Compute, absente sur Réseau/LLMaaS) → formatage tolérant + repli générique. */
+const frDec = (v) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(Number(v) || 0);
+
+function fmtSpecValue(v) {
+  if (typeof v === "boolean") return v ? "Oui" : "Non";
+  if (Array.isArray(v)) return esc(v.map((x) => prettify(String(x))).join(", "));
+  if (typeof v === "number") return num(v);
+  return esc(prettify(String(v ?? "")));
+}
+
+// label : libellé en table ; chip(v) : rendu compact (puce) quand pertinent ; val(v) : valeur en table.
+const SPEC_META = {
+  cores: { label: "Cœurs", chip: (v) => `<b>${num(v)}</b> cœurs`, val: (v) => num(v) },
+  threads: { label: "Threads", val: (v) => num(v) },
+  vcpu: { label: "vCPU", chip: (v) => `<b>${num(v)}</b> vCPU`, val: (v) => num(v) },
+  ram: { label: "Mémoire vive", chip: (v) => `<b>${num(v)}</b> Go RAM`, val: (v) => `${num(v)} Go` },
+  cpu_model: { label: "Processeur", chip: (v) => esc(String(v)), val: (v) => esc(String(v)) },
+  cpu_base_freq: { label: "Fréquence de base", chip: (v) => `${frDec(v)} GHz`, val: (v) => `${frDec(v)} GHz` },
+  cpu_turbo_freq: { label: "Fréquence turbo", val: (v) => `${frDec(v)} GHz` },
+  gpu: { label: "GPU", chip: (v) => `${fmtSpecValue(v)} · GPU`, val: fmtSpecValue },
+  nodes: { label: "Nœuds", chip: (v) => `<b>${num(v)}</b> nœuds`, val: (v) => num(v) },
+  cores_per_node: { label: "Cœurs / nœud", chip: (v) => `${num(v)} c/nœud`, val: (v) => num(v) },
+  threads_per_node: { label: "Threads / nœud", val: (v) => num(v) },
+  ram_per_node: { label: "RAM / nœud", chip: (v) => `${num(v)} Go/nœud`, val: (v) => `${num(v)} Go` },
+  storage_per_node: { label: "Stockage / nœud", val: (v) => `${num(v)} Go` },
+  storage_type: { label: "Type de stockage", chip: (v) => esc(prettify(String(v))), val: (v) => esc(prettify(String(v))) },
+  iops_per_tb: { label: "IOPS / To", chip: (v) => `${num(v)} IOPS/To`, val: (v) => `${num(v)} IOPS/To` },
+  redundancy_zones: { label: "Zones de redondance", val: (v) => num(v) },
+  replication: { label: "Réplication", val: fmtSpecValue },
+  replication_type: { label: "Type de réplication", val: fmtSpecValue },
+  technology: { label: "Technologie", chip: (v) => esc(String(v)), val: (v) => esc(String(v)) },
+  retention: { label: "Rétention", chip: (v) => esc(String(v)), val: (v) => esc(String(v)) },
+  level: { label: "Niveau", val: fmtSpecValue },
+  type: { label: "Type", val: fmtSpecValue },
+  power: { label: "Puissance", val: fmtSpecValue },
+  power_feeds: { label: "Arrivées électriques", val: fmtSpecValue },
+  speed: { label: "Débit", val: fmtSpecValue },
+  height: { label: "Hauteur", val: fmtSpecValue },
+  max_ips: { label: "IP max", val: (v) => num(v) },
+  protocols: { label: "Protocoles", val: fmtSpecValue },
+  recording: { label: "Enregistrement", val: fmtSpecValue },
+  features: { label: "Fonctions", val: fmtSpecValue },
+};
+
+const SPEC_ORDER = [
+  "cores", "vcpu", "threads", "ram", "cpu_model", "cpu_base_freq", "cpu_turbo_freq", "gpu",
+  "nodes", "cores_per_node", "threads_per_node", "ram_per_node", "storage_per_node",
+  "storage_type", "iops_per_tb", "redundancy_zones", "replication", "replication_type",
+  "technology", "retention", "level", "type", "power", "power_feeds", "speed", "height",
+];
+
+// Entrées specs ordonnées (clés connues d'abord, le reste à la suite).
+function specEntries(p) {
+  const specs = p.specs || {};
+  const keys = Object.keys(specs).filter((k) => {
+    const v = specs[k];
+    return v !== null && v !== undefined && v !== "" && !(Array.isArray(v) && !v.length);
+  });
+  keys.sort((a, b) => {
+    const ia = SPEC_ORDER.indexOf(a);
+    const ib = SPEC_ORDER.indexOf(b);
+    return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+  });
+  return keys.map((k) => {
+    const meta = SPEC_META[k] || { label: prettify(k), val: fmtSpecValue };
+    return { key: k, label: meta.label, chip: meta.chip, val: (meta.val || fmtSpecValue)(specs[k]) };
+  });
+}
+
+// Puces compactes : au plus 4 specs disposant d'un rendu « chip ».
+function specChipsHtml(p) {
+  const chips = specEntries(p).filter((e) => e.chip).slice(0, 4);
+  return chips.map((e) => `<span class="spec-chip">${e.chip(p.specs[e.key])}</span>`).join("");
+}
+
+// Table détaillée (carte dépliée) : toutes les specs + ligne facturation.
+function specRowsHtml(p) {
+  const rows = specEntries(p).map((e) => `<div class="row"><span>${esc(e.label)}</span><span>${e.val}</span></div>`);
+  if (p.engagement) rows.push(`<div class="row"><span>Facturation</span><span>${esc(p.engagement)}</span></div>`);
+  return rows.join("");
+}
 
 function groupCatalog() {
   const map = new Map();
@@ -858,15 +949,36 @@ const quoteLineFor = (sku, source) =>
   state.quote?.lines?.find((l) => l.sku === sku && l.source === source);
 
 /* ---------- Rendu : prix ---------- */
-function priceBlock(publicPrice, discounted, pct, unit) {
-  // Prix public par défaut ; le prix remisé (taux partenaire) n'apparaît qu'en mode partenaire.
-  const hasDiscount = state.partner && pct > 0 && discounted < publicPrice - 0.0001;
+// Bloc prix d'une carte produit. Prix public par défaut ; le prix remisé
+// (taux partenaire catalogue) n'apparaît qu'en mode partenaire.
+function cardPriceHtml(p) {
+  const hasDiscount = state.partner && p.discountPct > 0 && p.discountedPrice < p.publicPrice - 0.0001;
+  const main = hasDiscount ? p.discountedPrice : p.publicPrice;
   return `
-    <div class="product__price">
-      ${hasDiscount ? `<div class="price__public">${esc(money(publicPrice))}</div>` : ""}
-      <div class="price__disc">${esc(money(hasDiscount ? discounted : publicPrice))}</div>
-      <div class="price__unit">/ ${esc(unit)}${hasDiscount ? ` · −${num(pct)}%` : ""}</div>
-    </div>`;
+    ${hasDiscount ? `<div class="pc__price-public">${esc(money(p.publicPrice))}</div>` : ""}
+    <div class="pc__price-main">${esc(money(main))} <span class="per">/ ${esc(p.unit)}</span></div>
+    ${hasDiscount ? `<div class="pc__price-note">Partenaire −${num(p.discountPct)} %</div>` : ""}`;
+}
+
+// Étiquette de terme (mensuel / annuel / pluriannuel / perpétuel) pour une ligne de devis.
+function termChipHtml(ql) {
+  if (!ql) return "";
+  let cls = "monthly";
+  let label = "Mensuel";
+  if (ql.recurring === false) {
+    cls = "perpetual";
+    label = "Perpétuel";
+  } else {
+    const t = String(ql.term || "").toLowerCase();
+    if (t === "annual") {
+      cls = "annual";
+      label = "Annuel";
+    } else if (t === "multiyear") {
+      cls = "multiyear";
+      label = `${Math.max(1, Math.round((ql.term_months || 12) / 12))} ans`;
+    }
+  }
+  return `<span class="term-chip ${cls}">${esc(label)}</span>`;
 }
 
 /* ---------- Squelette ---------- */
@@ -883,12 +995,12 @@ function mount() {
         </div>
         <div class="topbar__spacer"></div>
         <div class="topbar__tools">
-          <div class="field-inline">
-            <label for="project">Nom de la cotation</label>
-            <input id="project" class="input input--project" placeholder="Nommer cette cotation" title="Renomme l'onglet actif" value="${esc(state.projectName)}" />
-          </div>
           <span id="api-status"></span>
-          <button class="btn btn--ghost btn--sm" data-set-api title="Configurer l'URL de l'API">${I.gear} API</button>
+          <button class="partner-pill ${state.partner ? "is-on" : ""}" data-partner-toggle aria-pressed="${state.partner ? "true" : "false"}" title="Basculer entre prix publics et tarifs partenaire (remise catalogue)">
+            <span class="partner-pill__switch"></span>
+            <span class="partner-pill__label">${state.partner ? "Tarifs partenaire" : "Prix publics"}</span>
+          </button>
+          <button class="btn btn--ghost btn--icon" data-set-api title="Configurer l'URL de l'API">${I.gear}</button>
         </div>
       </header>
 
@@ -897,20 +1009,17 @@ function mount() {
       <div id="banner-slot"></div>
 
       <div class="layout">
-        <section class="catalog">
-          <div class="catalog__head">
-            <h1 class="catalog__title">Composez votre offre</h1>
-            <p class="catalog__subtitle">Dépliez une famille, ajoutez des produits, le budget se calcule en temps réel.</p>
-          </div>
-          <div class="catalog-toolbar">
+        <aside class="sidebar" id="sidebar" aria-label="Catalogue"></aside>
+
+        <main class="main">
+          <div class="main__toolbar">
             <div class="search-box">
               ${I.search}
-              <input id="q-global" class="input" placeholder="Rechercher un produit (nom, SKU, type…)" value="${esc(state.search)}" />
+              <input id="q-global" class="input" placeholder="Rechercher un produit ou une licence (nom, SKU, type…)" value="${esc(state.search)}" />
             </div>
-            <button class="btn btn--ghost" data-toggle-all>Tout déplier</button>
           </div>
-          <div id="catalog-groups"></div>
-        </section>
+          <div id="main-body"></div>
+        </main>
 
         <aside id="summary-slot">${summarySkeleton()}</aside>
       </div>
@@ -958,13 +1067,15 @@ function renderQuoteControls() {
   const project = document.querySelector("#project");
   if (project && project.value !== state.projectName) project.value = state.projectName;
 
-  const period = document.querySelector("#period-select");
-  if (period) period.value = String(state.period);
+  // Segmented période : reflète la cotation active (la période est par-cotation).
+  document.querySelectorAll("#period-seg [data-period]").forEach((b) => {
+    b.classList.toggle("is-active", Number(b.dataset.period) === state.period);
+  });
 }
 
 function summarySkeleton() {
-  const periodOpts = PERIODS.map(
-    (p) => `<option value="${p}" ${p === state.period ? "selected" : ""}>${p === 1 ? "1 mois" : p % 12 === 0 ? `${p / 12} an${p / 12 > 1 ? "s" : ""}` : `${p} mois`}</option>`
+  const periodBtns = PERIODS.map(
+    (p) => `<button type="button" data-period="${p}" class="${p === state.period ? "is-active" : ""}">${esc(periodLabel(p))}</button>`
   ).join("");
   const sizeBtns = SUMMARY_PRESETS.map(
     (p) => `<button class="size-btn" type="button" data-summary-size="${p.px}" title="${esc(p.title)} (${p.px}px)" aria-label="Largeur ${esc(p.title)}">${esc(p.label)}</button>`
@@ -973,22 +1084,19 @@ function summarySkeleton() {
     <div class="summary">
       <div class="summary__resizer" title="Glisser pour redimensionner · double-clic pour réinitialiser" role="separator" aria-label="Redimensionner le panneau"></div>
       <div class="summary__head">
-        <h2>Résumé financier</h2>
+        <h2>Résumé</h2>
         <span class="summary__badge" id="count-badge">0 ligne</span>
-        <div class="summary__sizes" role="group" aria-label="Largeur du panneau">${sizeBtns}</div>
         <button class="btn btn--danger-ghost btn--sm" data-clear hidden id="clear-btn">Vider</button>
+        <div class="summary__sizes" role="group" aria-label="Largeur du panneau">${sizeBtns}</div>
       </div>
       <div class="summary__config">
-        <div class="cfg">
-          <label for="period-select">Projection</label>
-          <select id="period-select" class="input">${periodOpts}</select>
+        <div class="field-block">
+          <label for="project">Nom du projet</label>
+          <input id="project" class="input" placeholder="Nommer cette cotation" title="Renomme l'onglet actif" value="${esc(state.projectName)}" />
         </div>
-        <div class="cfg">
-          <label for="partner-toggle">Tarifs</label>
-          <button id="partner-toggle" type="button" class="partner-toggle ${state.partner ? "is-on" : ""}" data-partner-toggle aria-pressed="${state.partner ? "true" : "false"}" title="Basculer entre prix publics et tarifs partenaire (remise catalogue)">
-            <span class="partner-toggle__track"><span class="partner-toggle__thumb"></span></span>
-            <span class="partner-toggle__label">${state.partner ? "Partenaire" : "Publics"}</span>
-          </button>
+        <div class="field-block">
+          <label>Durée d'engagement / projection</label>
+          <div class="segmented" id="period-seg" role="group" aria-label="Durée de projection">${periodBtns}</div>
         </div>
       </div>
       <div class="summary__lines" id="summary-lines"></div>
@@ -1198,141 +1306,222 @@ function matchProduct(p, q) {
   return q.split(/\s+/).filter(Boolean).every((tok) => hay.includes(tok));
 }
 
-function visibleProducts(familyId) {
-  const list = state.catalogByFamily.get(familyId) || [];
-  const q = state.search.trim().toLowerCase();
-  return q ? list.filter((p) => matchProduct(p, q)) : list;
+// Compte les lignes du panier par famille (catalogue → familyId ; licences → "licenses").
+function cartCountByFamily() {
+  const map = new Map();
+  state.cart.forEach((l) => {
+    let fid = "licenses";
+    if (l.source === "catalog") {
+      const p = state.catalog.find((x) => x.sku === l.sku);
+      fid = p ? p.familyId : "servicesfam";
+    }
+    map.set(fid, (map.get(fid) || 0) + 1);
+  });
+  return map;
 }
 
-function renderCatalog() {
-  const root = document.querySelector("#catalog-groups");
+/* ---------- Rendu : sidebar (navigation par famille) ---------- */
+function renderSidebar() {
+  const root = document.querySelector("#sidebar");
   if (!root) return;
+  const q = state.search.trim().toLowerCase();
+  const cartByFam = cartCountByFamily();
+
+  let html = "";
+  GROUPS.forEach((group) => {
+    const items = FAMILIES.filter((f) => f.group === group.id)
+      .map((f) => navItem(f, q, cartByFam))
+      .filter(Boolean)
+      .join("");
+    if (!items) return;
+    html += `<div class="sidebar__title">${esc(group.label)}</div>${items}`;
+  });
+  root.innerHTML = html;
+}
+
+function navItem(f, q, cartByFam) {
+  let countHtml = "";
+  if (f.kind === "licenses") {
+    const total = state.health?.license_items || (state.lic.loaded ? state.lic.all.length : 0);
+    if (q) {
+      countHtml = state.lic.loaded
+        ? `<span class="nav-item__count"><em>${num(filteredLicenses().length)}</em></span>`
+        : `<span class="nav-item__count">…</span>`;
+    } else if (total) {
+      countHtml = `<span class="nav-item__count">${num(total)}</span>`;
+    }
+  } else {
+    const all = state.catalogByFamily.get(f.id) || [];
+    if (!all.length) return ""; // famille vide → masquée
+    countHtml = q
+      ? `<span class="nav-item__count"><em>${num(all.filter((p) => matchProduct(p, q)).length)}</em></span>`
+      : `<span class="nav-item__count">${num(all.length)}</span>`;
+  }
+  const cart = cartByFam.get(f.id) || 0;
+  const cartHtml = cart ? `<span class="nav-item__cart" title="${num(cart)} au panier">${num(cart)}</span>` : "";
+  const active = !q && f.id === state.activeFamily;
+  return `
+    <button class="nav-item ${active ? "is-active" : ""}" data-family-nav="${f.id}" aria-current="${active ? "page" : "false"}">
+      <span class="nav-item__ico">${familyIcon(f)}</span>
+      <span class="nav-item__label">${esc(f.label)}</span>
+      ${cartHtml}${countHtml}
+    </button>`;
+}
+
+/* ---------- Rendu : colonne centrale (aiguillage) ---------- */
+function renderMain() {
+  const body = document.querySelector("#main-body");
+  if (!body) return;
 
   if (state.loading) {
-    root.innerHTML = `<div class="loading-block"><div class="spinner"></div>Chargement du catalogue…</div>`;
+    body.innerHTML = `<div class="loading-block"><div class="spinner"></div>Chargement du catalogue…</div>`;
     return;
   }
-  // On affiche dès qu'un catalogue existe, quelle que soit sa source (live, cache
-  // navigateur ou snapshot embarqué) → plus jamais d'écran vide quand l'API est down.
   if (!state.catalog.length) {
-    root.innerHTML = `<div class="loading-block">${
+    body.innerHTML = `<div class="loading-block">${
       state.online ? "Aucun produit dans le catalogue." : "Catalogue indisponible : API hors ligne et aucune donnée locale."
     }</div>`;
     return;
   }
 
   const q = state.search.trim().toLowerCase();
-
-  // En recherche, on charge les licences une seule fois pour qu'elles participent aux résultats.
-  if (q && !state.lic.loaded && !state.lic.loading) {
-    loadLicenses().then(() => {
-      if (state.search.trim()) renderCatalog();
-    });
-  }
-
-  let html = "";
-
-  GROUPS.forEach((group) => {
-    const fams = FAMILIES.filter((f) => f.group === group.id);
-    const cards = fams
-      .map((f) => familyCard(f, q))
-      .filter(Boolean)
-      .join("");
-    if (!cards) return;
-    html += `<div class="group"><div class="group__label">${esc(group.label)}</div>${cards}</div>`;
-  });
-
-  // Bandeau récapitulatif des résultats de recherche.
   if (q) {
-    let prodMatches = 0;
-    let famMatches = 0;
-    FAMILIES.forEach((f) => {
-      if (f.kind === "licenses") return;
-      const m = (state.catalogByFamily.get(f.id) || []).filter((p) => matchProduct(p, q)).length;
-      if (m) {
-        prodMatches += m;
-        famMatches += 1;
-      }
-    });
-    const licMatches = state.lic.loaded ? filteredLicenses().length : null;
-    const parts = [];
-    if (prodMatches) parts.push(`<strong>${num(prodMatches)}</strong> produit${prodMatches > 1 ? "s" : ""} dans ${num(famMatches)} famille${famMatches > 1 ? "s" : ""}`);
-    if (licMatches === null) parts.push(`recherche des licences…`);
-    else if (licMatches) parts.push(`<strong>${num(licMatches)}</strong> licence${licMatches > 1 ? "s" : ""}`);
-    const summaryText = parts.length ? parts.join(" · ") : "Aucun résultat";
-    html =
-      `<div class="search-summary">
-        <span class="search-summary__txt">${summaryText} pour « ${esc(state.search.trim())} »</span>
-        <button class="search-summary__clear" data-clear-search>Effacer</button>
-      </div>` + html;
+    renderSearchView(body, q);
+    return;
   }
 
-  root.innerHTML = html || `<div class="loading-block">Aucun résultat pour « ${esc(state.search)} ».</div>`;
-
-  if (state.expanded.has("licenses") || q) renderLicenseResults();
+  const fam = FAMILIES.find((f) => f.id === state.activeFamily) || FAMILIES[0];
+  if (fam.kind === "licenses") {
+    renderLicensesView(body, fam);
+    return;
+  }
+  renderFamilyView(body, fam);
 }
 
-function familyCard(f, q) {
-  if (f.kind === "licenses") {
-    const total = state.health?.license_items || (state.lic.loaded ? state.lic.all.length : 0);
-    const searching = !!q;
-    let countLabel = total ? num(total) : "—";
-    if (searching) {
-      if (state.lic.loaded) {
-        const n = filteredLicenses().length;
-        if (!n) return ""; // aucune licence ne correspond → on masque la carte en recherche
-        countLabel = `<em>${num(n)}</em> / ${total ? num(total) : "—"}`;
-      } else {
-        countLabel = "…"; // licences en cours de chargement, comptage à venir
-      }
-    }
-    // En recherche, la famille s'ouvre d'office (la recherche globale pilote son filtre via state.lic.query).
-    const open = state.expanded.has(f.id) || searching;
-    return `
-      <div class="family ${open ? "is-open" : ""}" data-family="${f.id}">
-        <button class="family__head" data-family-toggle="${f.id}">
-          <span class="family__icon">${familyIcon(f)}</span>
-          <span class="family__meta">
-            <span class="family__name">${esc(f.label)}</span>
-            <span class="family__tag">${esc(f.tag)}</span>
-          </span>
-          <span class="family__count">${countLabel}</span>
-          <span class="family__chevron">${I.chevron}</span>
-        </button>
-        ${open ? `<div class="family__body">${licensePanelShell()}</div>` : ""}
+function renderFamilyView(body, fam) {
+  const all = state.catalogByFamily.get(fam.id) || [];
+
+  // Sous-familles (sub_type) : onglets si ≥2 valeurs distinctes (wrap si nombreuses).
+  const subs = [...new Set(all.map((p) => p.subType).filter(Boolean))].sort((a, b) => a.localeCompare(b, "fr"));
+  const activeSub = state.subfamily && subs.includes(state.subfamily) ? state.subfamily : "";
+  const items = activeSub ? all.filter((p) => p.subType === activeSub) : all;
+
+  let subfamilyHtml = "";
+  if (subs.length >= 2) {
+    subfamilyHtml = `
+      <div class="subfamily" role="group" aria-label="Sous-famille ${esc(fam.label)}">
+        <button type="button" class="${activeSub === "" ? "is-active" : ""}" data-subfamily="">Toutes</button>
+        ${subs
+          .map((s) => `<button type="button" class="${activeSub === s ? "is-active" : ""}" data-subfamily="${esc(s)}">${esc(prettify(s))}</button>`)
+          .join("")}
       </div>`;
   }
 
-  const all = state.catalogByFamily.get(f.id) || [];
-  if (!all.length) return "";
-  const items = q ? all.filter((p) => matchProduct(p, q)) : all;
-  if (q && !items.length) return "";
+  // Encart pédago : le dimensionnement libre relèvera du calculateur d'architecture (Phase 2).
+  const callout =
+    fam.id === "compute"
+      ? `<div class="callout">${I.bulb}<span>Besoin de dimensionner librement (vCPU / RAM / disque cibles) ? Ce sera le rôle du <b>calculateur d'architecture</b> (à venir). Ici, on choisit des références aux caractéristiques figées.</span></div>`
+      : "";
 
-  const open = state.expanded.has(f.id) || (q && items.length > 0);
-  const countLabel = q ? `<em>${items.length}</em> / ${all.length}` : num(all.length);
+  const countLabel = activeSub
+    ? `<em>${num(items.length)}</em> / ${num(all.length)} référence${all.length > 1 ? "s" : ""}`
+    : `${num(items.length)} référence${items.length > 1 ? "s" : ""}`;
 
-  return `
-    <div class="family ${open ? "is-open" : ""}" data-family="${f.id}">
-      <button class="family__head" data-family-toggle="${f.id}">
-        <span class="family__icon">${familyIcon(f)}</span>
-        <span class="family__meta">
-          <span class="family__name">${esc(f.label)}</span>
-          <span class="family__tag">${esc(f.tag)}</span>
-        </span>
-        <span class="family__count">${countLabel}</span>
-        <span class="family__chevron">${I.chevron}</span>
-      </button>
-      ${open ? `<div class="family__body">${items.map(productRow).join("")}</div>` : ""}
-    </div>`;
+  const head = `
+    <div class="main__head">
+      <h1 class="main__title">${esc(fam.label)}</h1>
+      <span class="main__count">${countLabel}</span>
+    </div>
+    <p class="main__desc">${esc(fam.tag)}. Prix publics affichés${state.partner ? " — tarifs partenaire actifs" : ""}.</p>`;
+
+  const grid = items.length
+    ? `<div class="product-grid">${items.map((p) => productCard(p, fam)).join("")}</div>`
+    : `<div class="loading-block">Aucune référence dans cette sélection.</div>`;
+
+  body.innerHTML = head + subfamilyHtml + callout + grid;
 }
 
-function productRow(p) {
+function renderLicensesView(body, fam) {
+  const total = state.health?.license_items || (state.lic.loaded ? state.lic.all.length : 0);
+  body.innerHTML = `
+    <div class="main__head">
+      <h1 class="main__title">${esc(fam.label)}</h1>
+      <span class="main__count">${total ? `${num(total)} références` : "—"}</span>
+    </div>
+    <p class="main__desc">${esc(fam.tag)}. Filtrez par éditeur ou par terme ; les prix sont term-aware (mensuel, annuel, pluriannuel, perpétuel).</p>
+    ${licensePanelShell()}`;
+  loadLicenses(); // idempotent : charge si besoin, sinon affichage immédiat ci-dessous
+  renderLicenseResults();
+}
+
+// Vue recherche globale : produits (groupés par famille) + licences correspondantes.
+function renderSearchView(body, q) {
+  // Charge les licences une seule fois pour qu'elles participent aux résultats.
+  if (!state.lic.loaded && !state.lic.loading) {
+    loadLicenses().then(() => {
+      if (state.search.trim()) {
+        renderMain();
+        renderSidebar();
+      }
+    });
+  }
+
+  let prodMatches = 0;
+  let famMatches = 0;
+  let sections = "";
+  GROUPS.forEach((group) => {
+    FAMILIES.filter((f) => f.group === group.id && f.kind !== "licenses").forEach((f) => {
+      const items = (state.catalogByFamily.get(f.id) || []).filter((p) => matchProduct(p, q));
+      if (!items.length) return;
+      prodMatches += items.length;
+      famMatches += 1;
+      sections += `
+        <div class="main__section">${esc(f.label)} · ${num(items.length)}</div>
+        <div class="product-grid">${items.map((p) => productCard(p, f)).join("")}</div>`;
+    });
+  });
+
+  const licMatches = state.lic.loaded ? filteredLicenses().length : null;
+
+  const parts = [];
+  if (prodMatches) parts.push(`<strong>${num(prodMatches)}</strong> produit${prodMatches > 1 ? "s" : ""} dans ${num(famMatches)} famille${famMatches > 1 ? "s" : ""}`);
+  if (licMatches === null) parts.push("recherche des licences…");
+  else if (licMatches) parts.push(`<strong>${num(licMatches)}</strong> licence${licMatches > 1 ? "s" : ""}`);
+  const summaryText = parts.length ? parts.join(" · ") : "Aucun résultat";
+
+  let html = `
+    <div class="search-summary">
+      <span class="search-summary__txt">${summaryText} pour « ${esc(state.search.trim())} »</span>
+      <button class="search-summary__clear" data-clear-search>Effacer</button>
+    </div>`;
+  html += sections;
+  if (licMatches) {
+    html += `<div class="main__section">Licences · ${num(licMatches)}</div>${licenseResultsShell()}`;
+  }
+  if (!prodMatches && licMatches === 0) {
+    html += `<div class="loading-block">Aucun résultat pour « ${esc(state.search.trim())} ».</div>`;
+  }
+
+  body.innerHTML = html;
+  if (licMatches) renderLicenseResults();
+}
+
+// Conteneur léger des résultats licences en recherche globale (sans toolbar dédiée :
+// le filtre est piloté par la recherche globale). Réutilise renderLicenseResults().
+function licenseResultsShell() {
+  return `<div class="lic"><div id="lic-results"></div><div class="lic-pager" id="lic-pager"></div></div>`;
+}
+
+function productCard(p, fam) {
   const line = findLine(p.sku, p.source);
-  const tags = [
+  const open = state.openCards.has(p.sku);
+  const hasSpecs = specEntries(p).length > 0;
+  const tag = p.subType ? prettify(p.subType) : fam ? fam.label : prettify(p.category);
+
+  const metaChips = [
     `<span class="chip chip--sku">${highlight(p.sku, state.search)}</span>`,
     p.snc ? `<span class="chip chip--snc">SecNumCloud</span>` : "",
     p.engagement && engagementMonths(p.engagement) > 1 ? `<span class="chip chip--eng">${esc(p.engagement)}</span>` : "",
-    ...p.tags.map((t) => `<span class="chip">${highlight(t, state.search)}</span>`),
   ]
     .filter(Boolean)
     .join("");
@@ -1344,15 +1533,29 @@ function productRow(p) {
          <button class="btn btn--primary btn--sm" data-add="${esc(p.sku)}">Ajouter</button>
        </div>`;
 
+  const toggle = hasSpecs
+    ? `<button class="pc__details-toggle" type="button" data-card-toggle="${esc(p.sku)}" aria-expanded="${open ? "true" : "false"}">${I.chevron} ${open ? "Masquer le détail" : "Voir le détail"}</button>`
+    : "";
+  const specTable = open && hasSpecs ? `<div class="spec-table">${specRowsHtml(p)}</div>` : "";
+
   return `
-    <div class="product ${line ? "is-in-cart" : ""}">
-      <div class="product__main">
-        <div class="product__name">${highlight(p.name, state.search)}</div>
-        ${p.description ? `<div class="product__desc">${highlight(p.description, state.search)}</div>` : ""}
-        <div class="product__tags">${tags}</div>
+    <div class="product-card ${line ? "is-in-cart" : ""} ${open ? "is-open" : ""}">
+      <div class="pc__top">
+        <div class="pc__id">
+          <div class="pc__name">${highlight(p.name, state.search)}</div>
+          <span class="pc__unit">unité : ${esc(p.unit)}</span>
+        </div>
+        <span class="pc__tag ${p.source === "license" ? "lic" : ""}">${esc(tag)}</span>
       </div>
-      ${priceBlock(p.publicPrice, p.discountedPrice, p.discountPct, p.unit)}
-      <div class="product__action">${action}</div>
+      ${p.description ? `<div class="pc__desc">${highlight(p.description, state.search)}</div>` : ""}
+      ${hasSpecs ? `<div class="spec-chips">${specChipsHtml(p)}</div>` : ""}
+      <div class="spec-chips">${metaChips}</div>
+      ${specTable}
+      <div class="pc__foot">
+        <div class="pc__price">${cardPriceHtml(p)}</div>
+        <div class="pc__actions">${action}</div>
+      </div>
+      ${toggle}
     </div>`;
 }
 
@@ -1523,12 +1726,10 @@ function renderSummaryLines() {
 
       const sub = ql ? `${num(l.quantity)} × ${money(nativeNet)}${lineTermSuffix(ql)}` : `${num(l.quantity)} × ${esc(unit)}`;
 
-      // Chips récap (remises + nature du terme).
+      // Chips remises (la nature du terme est portée par le term-chip de l'en-tête).
       const meta = [];
       if (ql && ql.standard_discount_percent > 0) meta.push(`<span class="cl-chip cl-chip--std">−${num(ql.standard_discount_percent)}% partenaire</span>`);
       if (state.partner && state.discount > 0 && recurring) meta.push(`<span class="cl-chip cl-chip--com">−${num(state.discount)}% engagement</span>`);
-      if (ql && !recurring) meta.push(`<span class="cl-chip cl-chip--eng">ponctuel</span>`);
-      else if (ql && months > 1) meta.push(`<span class="cl-chip cl-chip--eng">${esc(lineTermWord(ql))}</span>`);
 
       // Détail exhaustif par ligne (term-aware). En mode public (aucune remise), on
       // n'affiche PAS de « PU net » dupliqué ni de prix barré identique.
@@ -1560,30 +1761,32 @@ function renderSummaryLines() {
         details = `<div class="cart-line__details">${rows.join("")}</div>`;
       }
 
-      const totalHtml =
-        headlineNet === null
-          ? "…"
-          : recurring
-            ? `${esc(money(monthlyNet))}<span class="per">/mois</span>`
-            : `${esc(money(oneTime))}<span class="per">ponctuel</span>`;
+      const k = lineKey(l.sku, l.source);
+      const open = state.openLines.has(k);
+      const headline = headlineNet === null ? "…" : esc(money(recurring ? monthlyNet : oneTime));
+      const per = recurring ? "/ mois" : "ponctuel";
 
       return `
-        <div class="cart-line">
-          <div>
-            <div class="cart-line__name" title="${esc(l.name)}">${esc(ql?.name || l.name)}</div>
-            <div class="cart-line__sub">${sub}</div>
-            ${meta.length ? `<div class="cart-line__meta">${meta.join("")}</div>` : ""}
+        <div class="cart-line ${open ? "is-open" : ""}">
+          <button class="cart-line__head" type="button" data-card-line="${esc(k)}" aria-expanded="${open ? "true" : "false"}">
+            <span class="cart-line__chevron">${I.chevron}</span>
+            <span class="cart-line__info">
+              <span class="cart-line__name" title="${esc(ql?.name || l.name)}">${esc(ql?.name || l.name)}</span>
+              <span class="cart-line__meta">${termChipHtml(ql)}${meta.join("")}<span>${sub}</span></span>
+            </span>
+            <span class="cart-line__price">
+              ${showPub ? `<span class="pub">${esc(money(headlinePub))}</span>` : ""}
+              <b>${headline}</b><span class="per">${per}</span>
+              ${showEng ? `<span class="eng-tot">${esc(money(engTot))} / engagement</span>` : ""}
+            </span>
+          </button>
+          <div class="cart-line__body">
+            ${details}
+            <div class="cart-line__ctrl">
+              ${stepper(l.sku, l.source, l.quantity)}
+              <button class="btn btn--danger-ghost btn--sm cart-line__remove" data-remove="${esc(l.sku)}" data-source="${l.source}">${I.trash} Retirer</button>
+            </div>
           </div>
-          <div class="cart-line__total">
-            ${showPub ? `<span class="pub">${esc(money(headlinePub))}</span>` : ""}
-            ${totalHtml}
-            ${showEng ? `<span class="eng-tot">${esc(money(engTot))} sur engagement</span>` : ""}
-          </div>
-          <div class="cart-line__ctrl">
-            ${stepper(l.sku, l.source, l.quantity)}
-            <button class="btn btn--danger-ghost btn--sm cart-line__remove" data-remove="${esc(l.sku)}" data-source="${l.source}">${I.trash} Retirer</button>
-          </div>
-          ${details}
         </div>`;
     })
     .join("");
@@ -1681,7 +1884,8 @@ function render() {
   renderQuoteControls();
   renderStatus();
   renderBanner();
-  renderCatalog();
+  renderSidebar();
+  renderMain();
   renderSummaryLines();
   renderSummaryTotals();
   renderSyncFoot();
@@ -1695,11 +1899,66 @@ function wireEvents() {
 }
 
 function onClick(e) {
-  const t = e.target.closest("[data-family-toggle],[data-toggle-all],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-sync],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close],[data-summary-size],[data-partner-toggle]");
+  const t = e.target.closest("[data-family-nav],[data-subfamily],[data-card-toggle],[data-card-line],[data-period],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-sync],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close],[data-summary-size],[data-partner-toggle]");
   if (!t) return;
 
   if (t.hasAttribute("data-partner-toggle")) {
     togglePartnerMode();
+    return;
+  }
+
+  // Navigation par famille (sidebar) : quitte la recherche, réinitialise la sous-famille.
+  if (t.dataset.familyNav) {
+    state.activeFamily = t.dataset.familyNav;
+    state.subfamily = "";
+    state.openCards.clear();
+    if (state.search) {
+      state.search = "";
+      state.lic.query = "";
+      state.lic.page = 1;
+      const input = document.querySelector("#q-global");
+      if (input) input.value = "";
+    }
+    if (state.activeFamily === "licenses") loadLicenses();
+    renderSidebar();
+    renderMain();
+    return;
+  }
+
+  // Sous-famille (sub_type). Attention : data-subfamily="" est falsy → tester l'attribut.
+  if (t.hasAttribute("data-subfamily")) {
+    state.subfamily = t.dataset.subfamily || "";
+    renderMain();
+    return;
+  }
+
+  // Dépli/repli du détail specs d'une carte.
+  if (t.dataset.cardToggle) {
+    const sku = t.dataset.cardToggle;
+    if (state.openCards.has(sku)) state.openCards.delete(sku);
+    else state.openCards.add(sku);
+    renderMain();
+    return;
+  }
+
+  // Dépli/repli d'une ligne du devis.
+  if (t.dataset.cardLine) {
+    const k = t.dataset.cardLine;
+    if (state.openLines.has(k)) state.openLines.delete(k);
+    else state.openLines.add(k);
+    renderSummaryLines();
+    return;
+  }
+
+  // Durée d'engagement / projection (segmented control).
+  if (t.dataset.period) {
+    state.period = Number(t.dataset.period) || 12;
+    persistQuotes();
+    document.querySelectorAll("#period-seg [data-period]").forEach((b) => {
+      b.classList.toggle("is-active", Number(b.dataset.period) === state.period);
+    });
+    scheduleQuote();
+    renderSummaryTotals();
     return;
   }
 
@@ -1740,33 +1999,8 @@ function onClick(e) {
     state.lic.page = 1;
     const input = document.querySelector("#q-global");
     if (input) input.value = "";
-    renderCatalog();
-    return;
-  }
-
-  if (t.dataset.familyToggle) {
-    const id = t.dataset.familyToggle;
-    if (state.expanded.has(id)) state.expanded.delete(id);
-    else {
-      state.expanded.add(id);
-      if (id === "licenses") loadLicenses();
-    }
-    renderCatalog();
-    return;
-  }
-
-  if (t.hasAttribute("data-toggle-all")) {
-    const allIds = FAMILIES.filter((f) => f.kind === "licenses" || (state.catalogByFamily.get(f.id) || []).length).map((f) => f.id);
-    const allOpen = allIds.every((id) => state.expanded.has(id));
-    if (allOpen) {
-      state.expanded.clear();
-      t.textContent = "Tout déplier";
-    } else {
-      allIds.forEach((id) => state.expanded.add(id));
-      if (state.expanded.has("licenses")) loadLicenses();
-      t.textContent = "Tout replier";
-    }
-    renderCatalog();
+    renderSidebar();
+    renderMain();
     return;
   }
 
@@ -1792,7 +2026,9 @@ function onClick(e) {
 
   if (t.hasAttribute("data-clear")) {
     clearCart();
-    renderCatalog();
+    state.openLines.clear();
+    renderSidebar();
+    renderMain();
     renderSummaryLines();
     renderSummaryTotals();
     scheduleQuote();
@@ -1869,13 +2105,13 @@ function togglePartnerMode() {
   if (btn) {
     btn.classList.toggle("is-on", state.partner);
     btn.setAttribute("aria-pressed", state.partner ? "true" : "false");
-    const lbl = btn.querySelector(".partner-toggle__label");
-    if (lbl) lbl.textContent = state.partner ? "Partenaire" : "Publics";
+    const lbl = btn.querySelector(".partner-pill__label");
+    if (lbl) lbl.textContent = state.partner ? "Tarifs partenaire" : "Prix publics";
   }
   const foot = document.querySelector(".summary__foot");
   if (foot) foot.textContent = `Tarifs HT en euros · ${state.partner ? "tarifs partenaire" : "catalogue en prix publics"}`;
 
-  renderCatalog();
+  renderMain();
   renderLicenseResults();
   renderSummaryLines();
   renderSummaryTotals();
@@ -1884,11 +2120,14 @@ function togglePartnerMode() {
 
 // Met à jour l'affichage après une modification du panier sans casser le focus de la recherche licences.
 function afterCartChange(source) {
+  // Source licence : re-rendu léger des résultats licences (préserve le focus du champ #lic-q).
+  // Sinon : re-rendu de la colonne centrale (la carte passe en mode « au panier »).
   if (source === "license") {
     renderLicenseResults();
   } else {
-    renderCatalog();
+    renderMain();
   }
+  renderSidebar();
   renderQuoteControls();
   renderSummaryLines();
   renderSummaryTotals();
@@ -1953,8 +2192,12 @@ function onInput(e) {
     // Recherche unifiée : un seul champ pilote le catalogue ET les licences.
     state.lic.query = el.value;
     state.lic.page = 1;
+    // Le champ vit dans la toolbar statique (#main-body seul est re-rendu) → focus préservé.
     window.clearTimeout(searchTimer);
-    searchTimer = window.setTimeout(renderCatalog, 130);
+    searchTimer = window.setTimeout(() => {
+      renderMain();
+      renderSidebar();
+    }, 130);
     return;
   }
 
@@ -1976,15 +2219,6 @@ function onInput(e) {
 
 function onChange(e) {
   const el = e.target;
-
-  if (el.id === "period-select") {
-    state.period = Number(el.value) || 12;
-    persistQuotes();
-    scheduleQuote();
-    renderQuoteControls();
-    renderSummaryTotals();
-    return;
-  }
 
   if (el.id === "lic-vendor") {
     state.lic.vendor = el.value;
