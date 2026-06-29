@@ -12,6 +12,9 @@
   </head>
   <body>
     <div id="app"></div>
+    <!-- A4 (RGAA) : région live permanente, HORS #app (qui est ré-rendu en entier).
+         Une région live doit préexister à ses mises à jour pour être annoncée. -->
+    <div id="sr-announce" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
     <!-- Config runtime (origine de l'API) chargée avant app.js. Voir config.js. -->
     <script src="./config.js"></script>
     <script src="./src/offline-data.js"></script>

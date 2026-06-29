@@ -89,11 +89,25 @@ select {
   background: var(--green-soft);
 }
 
-/* Focus clavier global (préfigure le Lot 4 RGAA) */
+/* Focus clavier global (Lot 4 RGAA) */
 :focus-visible {
   outline: 2px solid var(--green);
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+/* A4 (RGAA) : masquage visuel sans retrait du flux d'accessibilité — sert de
+   support aux régions live (#sr-announce) annoncées aux lecteurs d'écran. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Scrollbars discrètes */
@@ -333,14 +347,18 @@ select {
 .btn--ghost {
   background: transparent;
 }
+/* Contraste (RGAA AA) : texte blanc sur --green (#16a06a) = 3.35:1 → échoue AA
+   (seuil 4.5). On utilise le vert foncé --green-bright (#0f7d52 = 5.15:1, AA OK)
+   en aplat. --green reste réservé aux accents/bordures (sans texte blanc dessus). */
 .btn--primary {
-  background: linear-gradient(150deg, var(--green) 0%, var(--green-bright) 100%);
+  background: var(--green-bright);
   border-color: transparent;
   color: var(--on-green);
 }
 .btn--primary:hover {
-  filter: brightness(1.06);
-  background: linear-gradient(150deg, var(--green) 0%, var(--green-bright) 100%);
+  filter: brightness(1.08);
+  background: var(--green-bright);
+  border-color: transparent;
 }
 .btn--sm {
   padding: 6px 10px;
@@ -391,8 +409,6 @@ select {
   height: 32px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 8px 0 12px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface-2);
@@ -408,6 +424,20 @@ select {
   color: var(--ink);
   border-color: var(--green-line);
   background: var(--green-soft);
+}
+.quote-tab__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
 }
 .quote-tab__label {
   min-width: 0;
@@ -438,11 +468,15 @@ select {
 .quote-tab__close {
   width: 19px;
   height: 19px;
+  margin-right: 7px;
   display: grid;
   place-items: center;
+  border: 0;
+  background: transparent;
   border-radius: 7px;
   color: var(--faint);
   flex-shrink: 0;
+  cursor: pointer;
 }
 .quote-tab__close:hover {
   color: var(--danger);
@@ -937,7 +971,6 @@ select {
 }
 .qty-input:focus {
   border-color: var(--green-line);
-  outline: none;
 }
 
 .stepper {
@@ -979,8 +1012,13 @@ select {
   -webkit-appearance: none;
   margin: 0;
 }
-.stepper input:focus {
+/* A3 (RGAA) : le stepper a overflow:hidden (coins arrondis) qui rognerait un
+   outline. On rend donc le focus clavier visible par un box-shadow INSET (dessiné
+   à l'intérieur, non rogné), par-contrôle (on voit quel −/+ ou champ est focalisé). */
+.stepper button:focus-visible,
+.stepper input:focus-visible {
   outline: none;
+  box-shadow: inset 0 0 0 2px var(--green);
 }
 
 /* ---------- Panneau Licences (réutilisé tel quel en vue famille « Licences ») ---------- */
@@ -1105,9 +1143,9 @@ select {
   background: var(--green-soft);
 }
 .icon-btn.is-added {
-  background: var(--green);
+  background: var(--green-bright);
   color: var(--on-green);
-  border-color: var(--green);
+  border-color: var(--green-bright);
 }
 
 /* ---------- Chips (SKU / SecNumCloud / engagement / terme licence) ---------- */

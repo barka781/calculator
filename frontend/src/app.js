@@ -821,6 +821,15 @@ function normalizeLicense(item) {
 const lineKey = (sku, source) => `${source}:${sku}`;
 const findLine = (sku, source) => state.cart.find((l) => l.sku === sku && l.source === source);
 
+// A4 (RGAA) : annonce un message court et ciblé aux lecteurs d'écran via la région
+// live #sr-announce (role=status, aria-live=polite, hors #app donc persistante).
+// On préfère des messages concis (« X ajouté », total net) plutôt que de rendre les
+// grandes zones (#summary-lines, badge) « live » — ce qui serait verbeux/inutilisable.
+function announce(message) {
+  const region = document.querySelector("#sr-announce");
+  if (region) region.textContent = message;
+}
+
 function upsertLine(meta, qty) {
   const q = clamp(Math.round(qty), meta.minQty || 1, 1e9);
   const existing = findLine(meta.sku, meta.source);
@@ -852,8 +861,10 @@ function bumpLine(sku, source, delta) {
 }
 
 function removeLine(sku, source) {
+  const removed = findLine(sku, source); // [A4] nom capturé avant suppression
   state.cart = state.cart.filter((l) => !(l.sku === sku && l.source === source));
   persistCart();
+  if (removed) announce(`${removed.name} retiré du devis`);
 }
 
 function clearCart() {
@@ -863,6 +874,7 @@ function clearCart() {
   state.quoteError = "";
   state.quoteSource = "live";
   persistCart();
+  announce("Devis vidé");
 }
 
 /* ---------- Devis temps réel ---------- */
@@ -941,6 +953,9 @@ async function runQuote() {
       state.quoteLoading = false;
       renderSummaryLines();
       renderSummaryTotals();
+      // [A4] Annonce concise du résultat du recalcul (débouncé par scheduleQuote).
+      if (state.quoteError) announce(state.quoteError);
+      else if (state.quote) announce(`Total mensuel net : ${money(state.quote.monthly_discounted_total)}`);
     }
   }
 }
@@ -1040,16 +1055,22 @@ function quoteTabsHtml() {
       const active = q.id === state.activeQuoteId;
       const label = quoteLabel(q, i);
       const lineCount = q.cart.length;
+      // A1 (RGAA) : la croix de fermeture est un vrai <button> focusable, frère du
+      // bouton de bascule — pas un <span> imbriqué (un <button> dans un <button> est
+      // invalide et la croix n'était pas atteignable au clavier). Le conteneur porte
+      // désormais l'aspect « pill » et l'état actif.
       return `
-        <button class="quote-tab ${active ? "is-active" : ""}" data-quote-switch="${esc(q.id)}" title="${esc(label)}">
-          <span class="quote-tab__label">${esc(label)}</span>
-          <span class="quote-tab__count">${num(lineCount)}</span>
+        <div class="quote-tab ${active ? "is-active" : ""}">
+          <button type="button" class="quote-tab__main" data-quote-switch="${esc(q.id)}" title="${esc(label)}">
+            <span class="quote-tab__label">${esc(label)}</span>
+            <span class="quote-tab__count">${num(lineCount)}</span>
+          </button>
           ${
             state.quotes.length > 1
-              ? `<span class="quote-tab__close" data-quote-close="${esc(q.id)}" title="Fermer la cotation">${I.close}</span>`
+              ? `<button type="button" class="quote-tab__close" data-quote-close="${esc(q.id)}" title="Fermer la cotation" aria-label="Fermer la cotation ${esc(label)}">${I.close}</button>`
               : ""
           }
-        </button>`;
+        </div>`;
     })
     .join("");
   return `
@@ -2100,6 +2121,7 @@ function addProduct(sku, source) {
   const input = document.querySelector(`[data-qty-input="${CSS.escape(lineKey(sku, source))}"]`);
   const qty = input ? Number(input.value) : source === "license" ? 1 : meta.baseQty || 1;
   upsertLine(meta, qty || meta.minQty || 1);
+  announce(`${meta.name} ajouté au devis`); // [A4]
   afterCartChange(source);
 }
 
