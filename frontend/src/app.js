@@ -92,6 +92,8 @@ const I = {
     '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
   close:
     '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  expand:
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></svg>',
   warn:
     '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>',
   gear:
@@ -136,6 +138,25 @@ function loadPartnerMode() {
   return localStorage.getItem(PARTNER_KEY) === "1";
 }
 
+// Préférences d'affichage du résumé : replis des sections « Configuration » et
+// « Détail financier » (mémorisés). La modale « panier en grand » n'est pas persistée.
+const SUMMARY_UI_KEY = "calc.summaryUi";
+function loadSummaryUi() {
+  try {
+    return JSON.parse(localStorage.getItem(SUMMARY_UI_KEY) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+function persistSummaryUi() {
+  try {
+    localStorage.setItem(SUMMARY_UI_KEY, JSON.stringify({ cfg: state.cfgCollapsed, totals: state.totalsCollapsed }));
+  } catch {
+    /* stockage indisponible : non bloquant */
+  }
+}
+const _summaryUi = loadSummaryUi();
+
 const state = {
   partner: loadPartnerMode(),
   health: null,
@@ -159,6 +180,10 @@ const state = {
   syncing: false,
   syncResult: null,
   syncError: "",
+  // Affichage du résumé
+  cfgCollapsed: _summaryUi.cfg === true, // bloc « nom + projection » replié
+  totalsCollapsed: _summaryUi.totals === true, // détail financier replié
+  summaryMax: false, // panier ouvert en grand (modale)
 };
 
 const app = document.querySelector("#app");
@@ -1039,6 +1064,7 @@ function mount() {
         <aside id="summary-slot">${summarySkeleton()}</aside>
       </div>
 
+      <div class="summary-backdrop" data-summary-close aria-hidden="true"></div>
       <footer class="sitefoot">
         <div id="sync-foot" class="sync"></div>
       </footer>
@@ -1046,6 +1072,8 @@ function mount() {
   renderQuoteControls();
   wireEvents();
   wireResizer();
+  wireSummaryScroll();
+  wireSummaryModal();
   applySummaryWidth(readSummaryWidth(), false); // restaure la largeur mémorisée
 }
 
@@ -1105,19 +1133,23 @@ function summarySkeleton() {
     <div class="summary">
       <div class="summary__resizer" title="Glisser pour redimensionner · double-clic pour réinitialiser" role="separator" aria-label="Redimensionner le panneau"></div>
       <div class="summary__head">
+        <button class="summary__expand" type="button" data-summary-toggle title="Ouvrir le panier en grand" aria-label="Ouvrir le panier en grand" aria-expanded="false">${I.expand}</button>
         <h2>Résumé</h2>
         <span class="summary__badge" id="count-badge">0 ligne</span>
         <button class="btn btn--danger-ghost btn--sm" data-clear hidden id="clear-btn">Vider</button>
         <div class="summary__sizes" role="group" aria-label="Largeur du panneau">${sizeBtns}</div>
       </div>
-      <div class="summary__config">
-        <div class="field-block">
-          <label for="project">Nom du projet</label>
-          <input id="project" class="input" placeholder="Nommer cette cotation" title="Renomme l'onglet actif" value="${esc(state.projectName)}" />
-        </div>
-        <div class="field-block">
-          <label>Durée d'engagement / projection</label>
-          <div class="segmented" id="period-seg" role="group" aria-label="Durée de projection">${periodBtns}</div>
+      <div class="summary__config ${state.cfgCollapsed ? "is-collapsed" : ""}">
+        <button class="section-toggle" type="button" data-toggle-config aria-expanded="${state.cfgCollapsed ? "false" : "true"}" title="Replier / déplier la configuration"><span class="section-toggle__chev">${I.chevron}</span><span>Configuration</span></button>
+        <div class="summary__config-body">
+          <div class="field-block">
+            <label for="project">Nom du projet</label>
+            <input id="project" class="input" placeholder="Nommer cette cotation" title="Renomme l'onglet actif" value="${esc(state.projectName)}" />
+          </div>
+          <div class="field-block">
+            <label>Durée d'engagement / projection</label>
+            <div class="segmented" id="period-seg" role="group" aria-label="Durée de projection">${periodBtns}</div>
+          </div>
         </div>
       </div>
       <div class="summary__lines" id="summary-lines"></div>
@@ -1189,6 +1221,74 @@ function wireResizer() {
   });
   // Double-clic : retour à la largeur standard.
   handle.addEventListener("dblclick", () => applySummaryWidth(SUMMARY_DEFAULT));
+}
+
+// Micro-animation de la carte résumé (flottante) au scroll : ajoute .is-scrolling et
+// data-scroll-dir pendant le défilement (léger soulèvement + ombre accentuée via CSS),
+// retirée à l'arrêt. Câblé une seule fois sur window (mount() ré-rend tout #app).
+let summaryScrollWired = false;
+function wireSummaryScroll() {
+  if (summaryScrollWired) return;
+  summaryScrollWired = true;
+  let lastY = window.scrollY || window.pageYOffset || 0;
+  let ticking = false;
+  let settle = null;
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const el = document.querySelector(".summary");
+        const y = window.scrollY || window.pageYOffset || 0;
+        // Pas d'animation directionnelle quand le panier est en modale (sinon le
+        // translate du scroll écraserait le centrage translate(-50%,-50%)).
+        if (el && !state.summaryMax && Math.abs(y - lastY) > 1) {
+          el.dataset.scrollDir = y > lastY ? "down" : "up";
+          el.classList.add("is-scrolling");
+          clearTimeout(settle);
+          settle = setTimeout(() => el.classList.remove("is-scrolling"), 200);
+        }
+        lastY = y;
+        ticking = false;
+      });
+    },
+    { passive: true }
+  );
+}
+
+// Bascule l'affichage « panier en grand » (modale) : classe sur <body> (le CSS recadre
+// la carte au centre + affiche le fond), et mise à jour du bouton (icône/intitulé).
+function applySummaryMax() {
+  document.body.classList.toggle("summary-maximized", state.summaryMax);
+  const btn = document.querySelector("[data-summary-toggle]");
+  if (btn) {
+    btn.innerHTML = state.summaryMax ? I.close : I.expand;
+    btn.title = state.summaryMax ? "Réduire le panier" : "Ouvrir le panier en grand";
+    btn.setAttribute("aria-label", btn.title);
+    btn.setAttribute("aria-expanded", state.summaryMax ? "true" : "false");
+  }
+}
+
+// Applique l'état replié du bloc « Configuration » (le bloc persiste, pas de re-render).
+function applyConfigCollapse() {
+  const cfg = document.querySelector(".summary__config");
+  if (cfg) cfg.classList.toggle("is-collapsed", state.cfgCollapsed);
+  const tg = document.querySelector("[data-toggle-config]");
+  if (tg) tg.setAttribute("aria-expanded", state.cfgCollapsed ? "false" : "true");
+}
+
+// Échap ferme la modale du panier. Câblé une seule fois sur document.
+let summaryModalWired = false;
+function wireSummaryModal() {
+  if (summaryModalWired) return;
+  summaryModalWired = true;
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && state.summaryMax) {
+      state.summaryMax = false;
+      applySummaryMax();
+    }
+  });
 }
 
 /* ---------- Rendu : statut + bandeau ---------- */
@@ -1893,18 +1993,24 @@ function renderSummaryTotals() {
   const showMonthlyPublic = q.monthly_public_total > q.monthly_discounted_total + 0.005;
   const hasOneTime = q.one_time_total > 0.005;
 
+  // « Détail financier » repliable : le Total mensuel net (et les coûts ponctuels)
+  // restent TOUJOURS visibles ; seul le détail (répartition, remises, projection,
+  // engagement, économie) se replie pour laisser plus de place aux lignes du panier.
+  const collapsed = state.totalsCollapsed;
   root.innerHTML = `
-    ${byFamily.size > 1 ? `<div class="fam-block"><div class="fam-block__title">Répartition mensuelle</div>${famRows}</div>` : ""}
-    ${showMonthlyPublic ? `<div class="total-row total-row--muted"><span class="lbl">Mensuel public</span><span class="val">${esc(money(q.monthly_public_total))}</span></div>` : ""}
-    ${breakdown.join("")}
     <div class="total-row total-row--main">
-      <span class="lbl">Total mensuel net</span>
+      <button class="totals-toggle" type="button" data-toggle-totals aria-expanded="${collapsed ? "false" : "true"}" title="${collapsed ? "Afficher le détail financier" : "Masquer le détail financier"}"><span class="totals-toggle__chev">${I.chevron}</span><span class="lbl">Total mensuel net</span></button>
       <span class="val">${esc(money(q.monthly_discounted_total))}<span class="per per--main">/mois</span></span>
     </div>
     ${hasOneTime ? `<div class="total-row total-row--onetime"><span class="lbl">Coûts ponctuels <small>(à l'achat)</small></span><span class="val">${esc(money(q.one_time_total))}</span></div>` : ""}
-    <div class="total-row"><span class="lbl">Projection ${esc(monthsLabel)}</span><span class="val">${esc(money(q.period_discounted_total))}</span></div>
-    <div class="total-row"><span class="lbl">Total à l'engagement</span><span class="val">${esc(money(q.total_on_engagement))}</span></div>
-    ${q.savings_total > 0.005 ? `<div class="total-row total-row--save"><span class="lbl">Économie sur ${esc(monthsLabel)}</span><span class="val">${esc(money(q.savings_total))}</span></div>` : ""}
+    <div class="totals-detail ${collapsed ? "is-collapsed" : ""}">
+      ${byFamily.size > 1 ? `<div class="fam-block"><div class="fam-block__title">Répartition mensuelle</div>${famRows}</div>` : ""}
+      ${showMonthlyPublic ? `<div class="total-row total-row--muted"><span class="lbl">Mensuel public</span><span class="val">${esc(money(q.monthly_public_total))}</span></div>` : ""}
+      ${breakdown.join("")}
+      <div class="total-row"><span class="lbl">Projection ${esc(monthsLabel)}</span><span class="val">${esc(money(q.period_discounted_total))}</span></div>
+      <div class="total-row"><span class="lbl">Total à l'engagement</span><span class="val">${esc(money(q.total_on_engagement))}</span></div>
+      ${q.savings_total > 0.005 ? `<div class="total-row total-row--save"><span class="lbl">Économie sur ${esc(monthsLabel)}</span><span class="val">${esc(money(q.savings_total))}</span></div>` : ""}
+    </div>
     ${state.quoteSource === "local" ? `<div class="total-sub">Calcul local hors-ligne · export indisponible jusqu'au retour de l'API</div>` : ""}
     ${state.quoteLoading ? `<div class="total-sub">Mise à jour…</div>` : ""}`;
 }
@@ -1929,8 +2035,36 @@ function wireEvents() {
 }
 
 function onClick(e) {
-  const t = e.target.closest("[data-family-nav],[data-subfamily],[data-card-toggle],[data-card-line],[data-period],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-sync],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close],[data-summary-size],[data-partner-toggle]");
+  const t = e.target.closest("[data-family-nav],[data-subfamily],[data-card-toggle],[data-card-line],[data-period],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-sync],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close],[data-summary-size],[data-partner-toggle],[data-summary-toggle],[data-summary-close],[data-toggle-config],[data-toggle-totals]");
   if (!t) return;
+
+  // Ouvrir / fermer le panier en grand (modale).
+  if (t.hasAttribute("data-summary-toggle")) {
+    state.summaryMax = !state.summaryMax;
+    applySummaryMax();
+    return;
+  }
+  if (t.hasAttribute("data-summary-close")) {
+    state.summaryMax = false;
+    applySummaryMax();
+    return;
+  }
+
+  // Replier / déplier le bloc « Configuration » (nom + projection).
+  if (t.hasAttribute("data-toggle-config")) {
+    state.cfgCollapsed = !state.cfgCollapsed;
+    persistSummaryUi();
+    applyConfigCollapse();
+    return;
+  }
+
+  // Replier / déplier le « Détail financier » (le total reste visible).
+  if (t.hasAttribute("data-toggle-totals")) {
+    state.totalsCollapsed = !state.totalsCollapsed;
+    persistSummaryUi();
+    renderSummaryTotals();
+    return;
+  }
 
   if (t.hasAttribute("data-partner-toggle")) {
     togglePartnerMode();
