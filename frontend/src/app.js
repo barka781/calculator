@@ -1450,6 +1450,10 @@ function renderLicensesView(body, fam) {
     </div>
     <p class="main__desc">${esc(fam.tag)}. Filtrez par éditeur ou par terme ; les prix sont term-aware (mensuel, annuel, pluriannuel, perpétuel).</p>
     ${licensePanelShell()}`;
+  // [G1] licensePanelShell() vient de recréer des <select> vides. Le flag, sinon
+  // jamais réinitialisé, ferait sortir populateLicenseFilters() en court-circuit et
+  // laisserait les filtres éditeur/terme vides à chaque remontage de la vue.
+  licenseFiltersReady = false;
   loadLicenses(); // idempotent : charge si besoin, sinon affichage immédiat ci-dessous
   renderLicenseResults();
 }
@@ -1687,6 +1691,10 @@ function renderSummaryLines() {
   const badge = document.querySelector("#count-badge");
   const clearBtn = document.querySelector("#clear-btn");
   if (!root) return;
+  // [G3] runQuote() rappelle cette fonction ~220 ms après un clic stepper (recalcul
+  // async) et reconstruit les steppers du résumé : on préserve le focus ici aussi,
+  // sinon il serait reperdu après la restauration synchrone d'afterCartChange().
+  const focus = captureStepperFocus();
 
   if (badge) badge.textContent = `${state.cart.length} ligne${state.cart.length > 1 ? "s" : ""}`;
   if (clearBtn) clearBtn.hidden = state.cart.length === 0;
@@ -1790,6 +1798,7 @@ function renderSummaryLines() {
         </div>`;
     })
     .join("");
+  restoreStepperFocus(focus); // [G3] focus préservé à travers le rebuild du résumé
 }
 
 // Libellé de famille pour une ligne de devis (sert au regroupement du résumé et de l'export).
@@ -2118,8 +2127,48 @@ function togglePartnerMode() {
   scheduleQuote();
 }
 
+// [G3] Mémorise l'identité du stepper (boutons −/+ ou champ quantité) qui a le focus,
+// pour le restaurer après un re-render destructif (innerHTML). Le même SKU pouvant
+// apparaître dans la liste ET dans le résumé, on retient aussi la région.
+function captureStepperFocus() {
+  const el = document.activeElement;
+  if (!el || !el.dataset) return null;
+  const region = el.closest("#summary-lines, #lic-results, #main-body");
+  const regionId = region ? region.id : "";
+  if (el.dataset.step) {
+    return { kind: "step", dir: el.dataset.step, sku: el.dataset.sku, source: el.dataset.source, region: regionId };
+  }
+  if (el.hasAttribute("data-qty-edit")) {
+    return { kind: "qty", sku: el.dataset.sku, source: el.dataset.source, start: el.selectionStart, end: el.selectionEnd, region: regionId };
+  }
+  return null;
+}
+
+// [G3] Restaure le focus capturé par captureStepperFocus() sur l'élément équivalent
+// du DOM reconstruit. No-op si la ligne a disparu (ex. décrément sous minQty).
+function restoreStepperFocus(tok) {
+  if (!tok || !tok.sku) return;
+  const scope = (tok.region && document.getElementById(tok.region)) || document;
+  const sk = CSS.escape(tok.sku);
+  const sel =
+    tok.kind === "step"
+      ? `[data-step="${tok.dir}"][data-sku="${sk}"][data-source="${tok.source}"]`
+      : `[data-qty-edit][data-sku="${sk}"][data-source="${tok.source}"]`;
+  const el = scope.querySelector(sel);
+  if (!el) return;
+  el.focus();
+  if (tok.kind === "qty" && tok.start != null && el.setSelectionRange) {
+    try {
+      el.setSelectionRange(tok.start, tok.end);
+    } catch {
+      /* certains navigateurs interdisent setSelectionRange sur type=number */
+    }
+  }
+}
+
 // Met à jour l'affichage après une modification du panier sans casser le focus de la recherche licences.
 function afterCartChange(source) {
+  const focus = captureStepperFocus(); // [G3] avant les re-renders destructifs
   // Source licence : re-rendu léger des résultats licences (préserve le focus du champ #lic-q).
   // Sinon : re-rendu de la colonne centrale (la carte passe en mode « au panier »).
   if (source === "license") {
@@ -2131,6 +2180,7 @@ function afterCartChange(source) {
   renderQuoteControls();
   renderSummaryLines();
   renderSummaryTotals();
+  restoreStepperFocus(focus); // [G3] après reconstruction du DOM
   scheduleQuote();
 }
 
