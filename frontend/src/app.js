@@ -130,13 +130,9 @@ const familyIcon = (f) => I[f.icon] || I.services;
 /* ---------- État ---------- */
 const quoteBoot = loadQuoteState();
 
-// Mode partenaire : bascule publique via le bouton activer/désactiver du résumé.
-// Choix mémorisé en localStorage (pas d'URL). Hors mode partenaire : prix publics,
-// aucune remise. La remise « partenaire » = remise catalogue par produit.
-const PARTNER_KEY = "calc.partnerMode";
-function loadPartnerMode() {
-  return localStorage.getItem(PARTNER_KEY) === "1";
-}
+// Mode partenaire (remise catalogue) : piloté par le DÉPLOIEMENT via
+// /health.view_partner (config .env CALCULATOR_VIEW_PARTNER). Plus de bascule UI ni de
+// localStorage ; côté serveur, quote.py neutralise toute remise hors mode partenaire.
 
 // Préférences d'affichage du résumé : replis des sections « Configuration » et
 // « Détail financier » (mémorisés). La modale « panier en grand » n'est pas persistée.
@@ -158,7 +154,7 @@ function persistSummaryUi() {
 const _summaryUi = loadSummaryUi();
 
 const state = {
-  partner: loadPartnerMode(),
+  partner: false, // défini depuis /health.view_partner au chargement (config .env)
   health: null,
   online: false,
   apiError: "",
@@ -177,9 +173,6 @@ const state = {
   lic: { all: [], loaded: false, loading: false, error: "", query: "", vendor: "", term: "", page: 1 },
   quotes: quoteBoot.quotes,
   activeQuoteId: quoteBoot.activeQuoteId,
-  syncing: false,
-  syncResult: null,
-  syncError: "",
   // Affichage du résumé
   cfgCollapsed: _summaryUi.cfg === true, // bloc « nom + projection » replié
   totalsCollapsed: _summaryUi.totals === true, // détail financier replié
@@ -585,6 +578,7 @@ async function applyOfflineFallback() {
   }
 
   state.health = choice.data.health || null;
+  state.partner = !!state.health?.view_partner; // repli : reprend la config de la dernière santé connue
   state.catalog = ((choice.data.catalog?.items) || []).map(normalizeCatalog);
   groupCatalog();
   state.dataSource = choice.source;
@@ -597,12 +591,12 @@ async function applyOfflineFallback() {
 async function loadAll() {
   state.loading = true;
   state.apiError = "";
-  renderStatus();
 
   let catalogOk = false;
   try {
     state.health = await fetchJson("health", { timeout: 6000 });
     state.online = state.health?.status === "ok";
+    state.partner = !!state.health?.view_partner; // mode partenaire piloté par le déploiement
   } catch {
     state.online = false;
     state.apiError = "API injoignable";
@@ -1035,11 +1029,6 @@ function mount() {
         </div>
         <div class="topbar__spacer"></div>
         <div class="topbar__tools">
-          <span id="api-status"></span>
-          <button class="partner-pill ${state.partner ? "is-on" : ""}" data-partner-toggle aria-pressed="${state.partner ? "true" : "false"}" title="Basculer entre prix publics et tarifs partenaire (remise catalogue)">
-            <span class="partner-pill__switch"></span>
-            <span class="partner-pill__label">${state.partner ? "Tarifs partenaire" : "Prix publics"}</span>
-          </button>
           <button class="btn btn--ghost btn--icon" data-set-api title="Configurer l'URL de l'API">${I.gear}</button>
         </div>
       </header>
@@ -1291,20 +1280,7 @@ function wireSummaryModal() {
   });
 }
 
-/* ---------- Rendu : statut + bandeau ---------- */
-function renderStatus() {
-  const el = document.querySelector("#api-status");
-  if (!el) return;
-  if (state.online) {
-    const h = state.health || {};
-    el.outerHTML = `<span id="api-status" class="status-pill is-online"><span class="dot"></span>En ligne · ${num(h.catalog_items)} produits · ${num(h.license_items)} licences</span>`;
-  } else if (state.dataStale && state.catalog.length) {
-    el.outerHTML = `<span id="api-status" class="status-pill is-local" title="API injoignable — catalogue servi depuis une source locale"><span class="dot"></span>Hors ligne · données locales</span>`;
-  } else {
-    el.outerHTML = `<span id="api-status" class="status-pill is-offline"><span class="dot"></span>Hors ligne</span>`;
-  }
-}
-
+/* ---------- Rendu : bandeau hors-ligne ---------- */
 function renderBanner() {
   const slot = document.querySelector("#banner-slot");
   if (!slot) return;
@@ -1346,78 +1322,14 @@ function renderBanner() {
     </div>`;
 }
 
-/* ---------- Rendu : fraîcheur de la source (pied de page) ----------
-   Alimenté par /health (bloc `sync`) : source live/locale, commit + date,
-   dernière synchro. Le statut « stale » remonte d'un refresh dégradé
-   (source distante injoignable mais cache conservé). */
+/* ---------- Rendu : pied de page (version uniquement) ----------
+   La synchro QuoteFlow reste pilotée côté backend ; le front n'en affiche plus le
+   statut. Seule la version applicative est conservée en pied de page. */
 function renderSyncFoot() {
   const el = document.querySelector("#sync-foot");
   if (!el) return;
   const appVersion = state.appVersion || state.health?.version || "";
-  const version = appVersion ? `<span class="sync__version">v${esc(appVersion)}</span>` : "";
-
-  // Hors-ligne : on expose la source de repli (cache/snapshot) et sa fraîcheur.
-  if (state.dataStale || !state.online) {
-    if (state.catalog.length) {
-      const srcLabel =
-        state.dataSource === "cache" ? "Cache navigateur (dernière visite)" : "Snapshot embarqué (livré avec l'app)";
-      const when = state.dataSavedAt ? ` · ${esc(fmtDate(state.dataSavedAt))}` : "";
-      el.innerHTML = `
-        <div class="sync__info">
-          <span class="sync__badge is-stale"><span class="dot"></span>Hors-ligne</span>
-          <span class="sync__src">${esc(srcLabel)}</span>
-          <span class="sync__meta">données locales${when}</span>
-          ${version}
-        </div>
-        <button class="btn btn--ghost btn--sm" data-retry>Réessayer</button>`;
-    } else {
-      el.innerHTML = `<div class="sync__info"><span class="sync__src">Source de données indisponible</span>${version}</div>`;
-    }
-    return;
-  }
-
-  const sync = state.health?.sync || null;
-  if (!sync) {
-    el.innerHTML = `<div class="sync__info"><span class="sync__src">Source de données indisponible</span>${version}</div>`;
-    return;
-  }
-
-  const src = sync.source || {};
-  const git = src.git || {};
-  const isLive = src.kind === "live_git";
-  const srcLabel = isLive ? "QuoteFlow — flux live (dépôt git maîtrisé)" : "QuoteFlow — copie locale";
-  const repo = git.url || git.remote || "";
-
-  const staleRefresh = state.syncResult?.refresh?.status === "stale";
-  let badgeCls = "is-fresh";
-  let badgeLabel = "À jour";
-  if (staleRefresh) {
-    badgeCls = "is-stale";
-    badgeLabel = "Source distante injoignable · cache conservé";
-  } else if (!sync.is_synchronized) {
-    badgeCls = "is-warn";
-    badgeLabel = "Mise à jour disponible";
-  }
-
-  const parts = [];
-  if (git.commit) parts.push(`commit <code>${esc(git.commit)}</code>`);
-  if (git.commit_date) parts.push(esc(fmtDate(git.commit_date)));
-  const lastSyncAt = sync.last_sync?.synced_at;
-  parts.push(lastSyncAt ? `synchronisé le ${esc(fmtDate(lastSyncAt))}` : "jamais synchronisé");
-
-  const err = state.syncError ? `<span class="sync__err">${esc(state.syncError)}</span>` : "";
-
-  el.innerHTML = `
-    <div class="sync__info">
-      <span class="sync__badge ${badgeCls}"><span class="dot"></span>${esc(badgeLabel)}</span>
-      <span class="sync__src">${esc(srcLabel)}</span>
-      <span class="sync__meta">${parts.join(" · ")}${repo ? ` · <span class="sync__repo">${esc(repo)}</span>` : ""}</span>
-      ${version}
-      ${err}
-    </div>
-    <button class="btn btn--ghost btn--sm" data-sync ${state.syncing ? "disabled" : ""}>${
-      state.syncing ? "Synchronisation…" : "Synchroniser"
-    }</button>`;
+  el.innerHTML = appVersion ? `<span class="sync__version">v${esc(appVersion)}</span>` : "";
 }
 
 /* ---------- Rendu : catalogue ---------- */
@@ -2018,12 +1930,14 @@ function renderSummaryTotals() {
 /* ---------- Rendu global ---------- */
 function render() {
   renderQuoteControls();
-  renderStatus();
   renderBanner();
   renderSidebar();
   renderMain();
   renderSummaryLines();
   renderSummaryTotals();
+  // Pied du résumé : reflète le mode (public/partenaire) piloté par la config.
+  const foot = document.querySelector(".summary__foot");
+  if (foot) foot.textContent = `Tarifs HT en euros · ${state.partner ? "tarifs partenaire" : "catalogue en prix publics"}`;
   renderSyncFoot();
 }
 
@@ -2035,7 +1949,7 @@ function wireEvents() {
 }
 
 function onClick(e) {
-  const t = e.target.closest("[data-family-nav],[data-subfamily],[data-card-toggle],[data-card-line],[data-period],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-sync],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close],[data-summary-size],[data-partner-toggle],[data-summary-toggle],[data-summary-close],[data-toggle-config],[data-toggle-totals]");
+  const t = e.target.closest("[data-family-nav],[data-subfamily],[data-card-toggle],[data-card-line],[data-period],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close],[data-summary-size],[data-summary-toggle],[data-summary-close],[data-toggle-config],[data-toggle-totals]");
   if (!t) return;
 
   // Ouvrir / fermer le panier en grand (modale).
@@ -2066,10 +1980,6 @@ function onClick(e) {
     return;
   }
 
-  if (t.hasAttribute("data-partner-toggle")) {
-    togglePartnerMode();
-    return;
-  }
 
   // Navigation par famille (sidebar) : quitte la recherche, réinitialise la sous-famille.
   if (t.dataset.familyNav) {
@@ -2219,32 +2129,6 @@ function onClick(e) {
     loadAll();
     return;
   }
-
-  if (t.hasAttribute("data-sync")) {
-    runSync();
-  }
-}
-
-// Déclenche une synchronisation côté backend (refresh de la source live + copie),
-// puis recharge la fraîcheur et le catalogue. Passe par fetchJson → bénéficie du
-// repli automatique sur le backend local si l'URL configurée est injoignable.
-async function runSync() {
-  if (state.syncing) return;
-  state.syncing = true;
-  state.syncError = "";
-  renderSyncFoot();
-  try {
-    state.syncResult = await fetchJson("api/sync/catalog", {
-      method: "POST",
-      params: { refresh: true },
-      timeout: 60000,
-    });
-  } catch {
-    state.syncError = "Synchronisation impossible";
-  } finally {
-    state.syncing = false;
-  }
-  await loadAll();
 }
 
 function addProduct(sku, source) {
@@ -2257,30 +2141,6 @@ function addProduct(sku, source) {
   upsertLine(meta, qty || meta.minQty || 1);
   announce(`${meta.name} ajouté au devis`); // [A4]
   afterCartChange(source);
-}
-
-// Bascule publique entre prix publics et tarifs partenaire (remise catalogue).
-// MAJ visuelle du switch + pied de page hors du flux render(), puis re-rendu des
-// vues qui dépendent du tarif (catalogue, licences, résumé) et recalcul du devis.
-function togglePartnerMode() {
-  state.partner = !state.partner;
-  localStorage.setItem(PARTNER_KEY, state.partner ? "1" : "0");
-
-  const btn = document.querySelector("[data-partner-toggle]");
-  if (btn) {
-    btn.classList.toggle("is-on", state.partner);
-    btn.setAttribute("aria-pressed", state.partner ? "true" : "false");
-    const lbl = btn.querySelector(".partner-pill__label");
-    if (lbl) lbl.textContent = state.partner ? "Tarifs partenaire" : "Prix publics";
-  }
-  const foot = document.querySelector(".summary__foot");
-  if (foot) foot.textContent = `Tarifs HT en euros · ${state.partner ? "tarifs partenaire" : "catalogue en prix publics"}`;
-
-  renderMain();
-  renderLicenseResults();
-  renderSummaryLines();
-  renderSummaryTotals();
-  scheduleQuote();
 }
 
 // [G3] Mémorise l'identité du stepper (boutons −/+ ou champ quantité) qui a le focus,
