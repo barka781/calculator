@@ -2078,6 +2078,177 @@ mark {
   font-weight: 600;
 }
 
+/* ---------- Bouton « Enregistrer le devis » (panneau résumé) ---------- */
+.history-save-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 0 18px 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--green-line);
+  border-radius: var(--radius-sm);
+  background: var(--green-soft);
+  color: var(--green-bright);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.history-save-btn:hover:not(:disabled) {
+  background: var(--green);
+  color: var(--on-green);
+  border-color: var(--green);
+}
+.history-save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.history-save-btn svg {
+  flex-shrink: 0;
+}
+
+/* ---------- Modale générique (historique des devis) ---------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+.modal.is-open {
+  opacity: 1;
+  visibility: visible;
+}
+.modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+.modal__dialog {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 100%);
+  max-height: min(80vh, 760px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 30px 80px -20px rgba(15, 23, 42, 0.5);
+  overflow: hidden;
+  transform: translateY(8px) scale(0.98);
+  transition: transform 0.2s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.modal.is-open .modal__dialog {
+  transform: none;
+}
+.modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.modal__head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.modal__close {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.modal__close:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: var(--danger-line);
+}
+.modal__body {
+  padding: 8px 20px 18px;
+  overflow-y: auto;
+}
+body.modal-open {
+  overflow: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal,
+  .modal__dialog {
+    transition: none;
+  }
+}
+
+/* Liste d'historique */
+.history-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--faint);
+}
+.history-empty svg {
+  width: 30px;
+  height: 30px;
+  color: var(--border-strong);
+}
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.history-item:last-child {
+  border-bottom: 0;
+}
+.history-item__main {
+  flex: 1;
+  min-width: 0;
+}
+.history-item__name {
+  font-weight: 700;
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-item__meta {
+  font-size: 11.5px;
+  color: var(--faint);
+  margin-top: 2px;
+}
+.history-item__total {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--green-bright);
+  white-space: nowrap;
+}
+.history-item__total .per {
+  font-size: 11px;
+  color: var(--faint);
+  font-weight: 600;
+  margin-left: 2px;
+}
+.history-item__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1180px) {
   .layout {

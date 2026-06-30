@@ -94,6 +94,10 @@ const I = {
     '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
   expand:
     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></svg>',
+  history:
+    '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/></svg>',
+  save:
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
   warn:
     '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>',
   gear:
@@ -152,6 +156,10 @@ function persistSummaryUi() {
   }
 }
 const _summaryUi = loadSummaryUi();
+
+// Historique des devis : snapshots locaux (localStorage), réouvrables. Plafonné.
+const HISTORY_KEY = "calc.history";
+const HISTORY_MAX = 50;
 
 const state = {
   partner: false, // défini depuis /health.view_partner au chargement (config .env)
@@ -1029,6 +1037,7 @@ function mount() {
         </div>
         <div class="topbar__spacer"></div>
         <div class="topbar__tools">
+          <button class="btn btn--ghost btn--sm" data-history-open title="Historique des devis enregistrés">${I.history} Historique</button>
           <button class="btn btn--ghost btn--icon" data-set-api title="Configurer l'URL de l'API">${I.gear}</button>
         </div>
       </header>
@@ -1054,6 +1063,18 @@ function mount() {
       </div>
 
       <div class="summary-backdrop" data-summary-close aria-hidden="true"></div>
+
+      <div class="modal" id="history-modal" role="dialog" aria-modal="true" aria-label="Historique des devis">
+        <div class="modal__backdrop" data-history-close></div>
+        <div class="modal__dialog">
+          <div class="modal__head">
+            <h2>Historique des devis</h2>
+            <button class="modal__close" type="button" data-history-close aria-label="Fermer l'historique">${I.close}</button>
+          </div>
+          <div class="modal__body" id="history-list"></div>
+        </div>
+      </div>
+
       <footer class="sitefoot">
         <div id="sync-foot" class="sync"></div>
       </footer>
@@ -1143,6 +1164,7 @@ function summarySkeleton() {
       </div>
       <div class="summary__lines" id="summary-lines"></div>
       <div class="summary__totals" id="summary-totals"></div>
+      <button class="history-save-btn" type="button" data-history-save title="Enregistrer ce devis dans l'historique">${I.save} Enregistrer le devis</button>
       <div class="summary__export" id="summary-export">
         <button class="export-btn" data-export="xlsx" title="Télécharger en Excel">${I.download} Excel</button>
         <button class="export-btn" data-export="pdf" title="Télécharger en PDF">${I.download} PDF</button>
@@ -1267,17 +1289,123 @@ function applyConfigCollapse() {
   if (tg) tg.setAttribute("aria-expanded", state.cfgCollapsed ? "false" : "true");
 }
 
-// Échap ferme la modale du panier. Câblé une seule fois sur document.
+// Échap ferme la modale ouverte (historique prioritaire, puis panier). Câblé 1× sur document.
 let summaryModalWired = false;
 function wireSummaryModal() {
   if (summaryModalWired) return;
   summaryModalWired = true;
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && state.summaryMax) {
+    if (e.key !== "Escape") return;
+    if (isHistoryOpen()) {
+      closeHistory();
+    } else if (state.summaryMax) {
       state.summaryMax = false;
       applySummaryMax();
     }
   });
+}
+
+/* ---------- Historique des devis (snapshots locaux) ---------- */
+function loadHistory() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+function saveHistory(list) {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, HISTORY_MAX)));
+  } catch {
+    /* stockage indisponible : non bloquant */
+  }
+}
+
+// Fige le devis actif (lignes + durée + nom + total affiché) en tête d'historique.
+function snapshotActiveQuote() {
+  const q = activeQuote();
+  if (!q.cart.length) return;
+  const idx = state.quotes.findIndex((x) => x.id === q.id);
+  const entry = {
+    id: quoteId(),
+    name: quoteLabel(q, idx),
+    savedAt: new Date().toISOString(),
+    period: q.period,
+    cart: clone(q.cart),
+    monthly: state.quote ? state.quote.monthly_discounted_total : null,
+    periodTotal: state.quote ? state.quote.period_discounted_total : null,
+    partner: state.partner,
+  };
+  const list = loadHistory();
+  list.unshift(entry);
+  saveHistory(list);
+  announce(`Devis « ${entry.name} » enregistré dans l'historique`); // [A4]
+  if (isHistoryOpen()) renderHistoryList();
+}
+
+// Rouvre un devis enregistré : nouvelle cotation reconstruite depuis le snapshot
+// (le chiffrage est recalculé à l'ouverture, prix du jour).
+function reopenHistory(id) {
+  const entry = loadHistory().find((e) => e.id === id);
+  if (!entry) return;
+  const q = createQuote(
+    { name: entry.name, projectName: entry.name, cart: entry.cart, period: entry.period },
+    state.quotes.length
+  );
+  state.quotes.push(q);
+  closeHistory();
+  setActiveQuote(q.id); // persiste + rend + planifie le recalcul
+}
+function deleteHistory(id) {
+  saveHistory(loadHistory().filter((e) => e.id !== id));
+  renderHistoryList();
+}
+
+function isHistoryOpen() {
+  const m = document.querySelector("#history-modal");
+  return !!m && m.classList.contains("is-open");
+}
+function openHistory() {
+  const m = document.querySelector("#history-modal");
+  if (!m) return;
+  renderHistoryList();
+  m.classList.add("is-open");
+  document.body.classList.add("modal-open");
+}
+function closeHistory() {
+  const m = document.querySelector("#history-modal");
+  if (m) m.classList.remove("is-open");
+  document.body.classList.remove("modal-open");
+}
+
+function renderHistoryList() {
+  const root = document.querySelector("#history-list");
+  if (!root) return;
+  const list = loadHistory();
+  if (!list.length) {
+    root.innerHTML = `<div class="history-empty">${I.history}<div>Aucun devis enregistré.<br />Composez un devis puis cliquez « Enregistrer le devis ».</div></div>`;
+    return;
+  }
+  root.innerHTML = list
+    .map((e) => {
+      const n = e.cart ? e.cart.length : 0;
+      const total = e.monthly != null ? `${esc(money(e.monthly))}<span class="per">/mois</span>` : "—";
+      const meta = `${esc(fmtDate(e.savedAt))} · ${num(n)} ligne${n > 1 ? "s" : ""}${e.partner ? " · tarifs partenaire" : ""}`;
+      return `
+        <div class="history-item">
+          <div class="history-item__main">
+            <div class="history-item__name">${esc(e.name)}</div>
+            <div class="history-item__meta">${meta}</div>
+          </div>
+          <div class="history-item__total">${total}</div>
+          <div class="history-item__actions">
+            <button class="btn btn--ghost btn--sm" data-history-reopen="${esc(e.id)}">Rouvrir</button>
+            <button class="btn btn--danger-ghost btn--icon btn--sm" data-history-delete="${esc(e.id)}" title="Supprimer" aria-label="Supprimer le devis ${esc(e.name)}">${I.trash}</button>
+          </div>
+        </div>`;
+    })
+    .join("");
 }
 
 /* ---------- Rendu : bandeau hors-ligne ---------- */
@@ -1738,6 +1866,10 @@ function renderSummaryLines() {
       b.title = state.quoteSource === "local" ? "Export indisponible hors-ligne" : b.dataset.defaultTitle;
     }
   });
+  // « Enregistrer le devis » : actif dès qu'il y a des lignes (l'historique est local,
+  // donc disponible même hors-ligne, contrairement aux exports serveur).
+  const saveBtn = document.querySelector("[data-history-save]");
+  if (saveBtn) saveBtn.disabled = state.cart.length === 0;
 
   if (!state.cart.length) {
     root.innerHTML = `
@@ -1949,8 +2081,30 @@ function wireEvents() {
 }
 
 function onClick(e) {
-  const t = e.target.closest("[data-family-nav],[data-subfamily],[data-card-toggle],[data-card-line],[data-period],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close],[data-summary-size],[data-summary-toggle],[data-summary-close],[data-toggle-config],[data-toggle-totals]");
+  const t = e.target.closest("[data-family-nav],[data-subfamily],[data-card-toggle],[data-card-line],[data-period],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close],[data-summary-size],[data-summary-toggle],[data-summary-close],[data-toggle-config],[data-toggle-totals],[data-history-open],[data-history-close],[data-history-save],[data-history-reopen],[data-history-delete]");
   if (!t) return;
+
+  // Historique des devis (snapshots locaux).
+  if (t.hasAttribute("data-history-open")) {
+    openHistory();
+    return;
+  }
+  if (t.hasAttribute("data-history-close")) {
+    closeHistory();
+    return;
+  }
+  if (t.hasAttribute("data-history-save")) {
+    snapshotActiveQuote();
+    return;
+  }
+  if (t.dataset.historyReopen) {
+    reopenHistory(t.dataset.historyReopen);
+    return;
+  }
+  if (t.dataset.historyDelete) {
+    deleteHistory(t.dataset.historyDelete);
+    return;
+  }
 
   // Ouvrir / fermer le panier en grand (modale).
   if (t.hasAttribute("data-summary-toggle")) {
