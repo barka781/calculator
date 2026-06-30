@@ -35,6 +35,13 @@ services:
       CALCULATOR_POSTGRES_PASSWORD: ${CALCULATOR_POSTGRES_PASSWORD:?Définir CALCULATOR_POSTGRES_PASSWORD dans .env ou l'environnement}
       CALCULATOR_POSTGRES_DB: ${CALCULATOR_POSTGRES_DB:-calculator}
       CALCULATOR_SOURCE: db
+      # Mode partenaire (remise catalogue) autorisé pour ce déploiement : yes/no.
+      # Défaut « no » = prix publics. Fait autorité serveur (cf. quote.py).
+      CALCULATOR_VIEW_PARTNER: ${CALCULATOR_VIEW_PARTNER:-no}
+      # Barème engagement→% (donnée métier INTERNE). Format "mois:pct,mois:pct".
+      # Valeurs définies dans .env (hors dépôt public) ; défaut VIDE ici exprès.
+      # N'a d'effet qu'en mode partenaire.
+      CALCULATOR_ENGAGEMENT_DISCOUNT_SCALE: ${CALCULATOR_ENGAGEMENT_DISCOUNT_SCALE:-}
       # 900 s = 15 min. Mettre 0 pour désactiver la synchro automatique.
       CALCULATOR_SYNC_POLL_INTERVAL_SECONDS: ${CALCULATOR_SYNC_POLL_INTERVAL_SECONDS:-900}
     depends_on:

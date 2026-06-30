@@ -50,6 +50,47 @@ def data_source() -> str:
     return os.getenv("CALCULATOR_SOURCE", "db").strip().lower()
 
 
+def view_partner() -> bool:
+    """Le mode partenaire (remise catalogue) est-il autorisé pour ce déploiement ?
+
+    Piloté par CALCULATOR_VIEW_PARTNER (yes/no). Défaut : NON (prix publics).
+    Fait autorité côté serveur : une requête `partner=True` est neutralisée si le
+    déploiement ne l'autorise pas (cohérent avec la neutralisation à la source).
+    Non mémorisée pour rester surchargeable à chaud (tests).
+    """
+    raw = os.getenv("CALCULATOR_VIEW_PARTNER", "").strip().lower()
+    return raw in ("1", "yes", "true", "on", "oui")
+
+
+def engagement_discount_scale() -> dict[int, float]:
+    """Barème durée d'engagement (mois) → remise % (levier « engagement »).
+
+    Donnée métier INTERNE, fournie HORS dépôt public via
+    CALCULATOR_ENGAGEMENT_DISCOUNT_SCALE au format "mois:pct,mois:pct"
+    (ex: "1:0,12:5,24:10"). Vide par défaut → aucune remise d'engagement.
+    N'a d'effet QU'EN mode partenaire (cf. quote.py / view_partner) : sur un
+    déploiement public, le barème est ignoré comme toute remise.
+    Non mémorisée pour rester surchargeable à chaud (tests).
+    """
+    raw = os.getenv("CALCULATOR_ENGAGEMENT_DISCOUNT_SCALE", "").strip()
+    scale: dict[int, float] = {}
+    if not raw:
+        return scale
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if not pair or ":" not in pair:
+            continue
+        months_str, pct_str = pair.split(":", 1)
+        try:
+            months = int(months_str.strip())
+            pct = float(pct_str.strip())
+        except ValueError:
+            continue
+        if months >= 0 and 0 <= pct <= 100:
+            scale[months] = pct
+    return scale
+
+
 def calculator_version() -> str:
     configured = os.getenv("CALCULATOR_VERSION")
     if configured and configured.strip():

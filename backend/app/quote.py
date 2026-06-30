@@ -6,6 +6,7 @@ from typing import Any, Literal, Optional
 from fastapi import HTTPException
 
 from .catalog import find_catalog_item
+from .config import engagement_discount_scale, view_partner
 from .licenses import find_license_item
 from .models import QuoteLineRequest, QuoteLineResponse, QuoteRequest, QuoteResponse
 
@@ -113,15 +114,24 @@ def calculate_quote(request: QuoteRequest) -> QuoteResponse:
     # Prix publics par défaut. La remise catalogue (taux par produit) n'est
     # appliquée QU'EN mode partenaire ; `discount_percent` est une remise
     # additionnelle optionnelle (masquée dans l'UI publique, défaut 0).
-    partner = request.partner
-    # `discount_percent` (remise additionnelle, masquée dans l'UI) ne s'applique
-    # QU'EN mode partenaire : un client public ne doit JAMAIS être remisé, même si
-    # une valeur résiduelle (devis ancien persisté) ou un client API legacy l'envoie.
-    # On expose la remise EFFECTIVE (0 hors partenaire) pour que tout consommateur
-    # de la réponse (exports, UI) ne calcule pas une remise fantôme.
-    effective_discount = request.discount_percent if partner else 0.0
-    extra_factor = 1 - effective_discount / 100
+    # Le mode partenaire doit AUSSI être autorisé par le déploiement
+    # (CALCULATOR_VIEW_PARTNER) : on neutralise une requête `partner=True` reçue
+    # sur un déploiement « prix publics » (autorité serveur).
+    partner = bool(request.partner) and view_partner()
+    # Remise « engagement » (masquée dans l'UI) : QU'EN mode partenaire. Un client
+    # public ne doit JAMAIS être remisé, même si une valeur résiduelle ou un client API
+    # legacy l'envoie. Le barème durée→% (donnée interne via .env) fait AUTORITÉ s'il est
+    # défini : il dérive la remise de la durée d'engagement (period_months). Sinon, on
+    # retombe sur la remise éventuellement transmise (compat API). On expose la remise
+    # EFFECTIVE (0 hors partenaire) pour que tout consommateur (exports, UI) ne calcule
+    # pas une remise fantôme.
     period = request.period_months
+    if partner:
+        scale = engagement_discount_scale()
+        effective_discount = scale.get(int(period), 0.0) if scale else float(request.discount_percent)
+    else:
+        effective_discount = 0.0
+    extra_factor = 1 - effective_discount / 100
     monthly_public_total = 0.0
     monthly_discounted_total = 0.0
     one_time_public_total = 0.0

@@ -21,6 +21,7 @@ from .config import (
     source_catalogs_dir,
     source_licences_dir,
     sync_poll_interval_seconds,
+    view_partner,
 )
 from .export import render_quote
 from .licenses import find_license_item, load_license_items, search_licenses
@@ -90,6 +91,7 @@ def health() -> dict[str, Any]:
         "status": "ok",
         "version": calculator_version(),
         "data_source": data_source(),
+        "view_partner": view_partner(),
         "catalog_items": catalog_count,
         "license_items": license_count,
         "catalogs_dir": str(catalogs_dir()),

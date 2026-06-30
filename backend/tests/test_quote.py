@@ -53,6 +53,71 @@ def test_quote_partner_mode_applies_catalog_discount():
     assert quote.period_discounted_total == 696.73
 
 
+def test_view_partner_env_gates_pricing(monkeypatch):
+    # CALCULATOR_VIEW_PARTNER fait AUTORITÉ : la même requête (partner=True +
+    # discount_percent) est NEUTRALISÉE si le déploiement n'autorise pas le partenaire,
+    # et appliquée sinon. On surcharge le défaut de conftest dans les deux sens.
+    sku = "csp:fr1:iaas:storage:bloc:medium:v1"  # public 0.0756, standard 25%
+    request = QuoteRequest(
+        period_months=12,
+        partner=True,
+        discount_percent=10,
+        lines=[QuoteLineRequest(sku=sku, quantity=1024)],
+    )
+
+    # Déploiement « prix publics » : remise neutralisée malgré partner=True.
+    monkeypatch.setenv("CALCULATOR_VIEW_PARTNER", "no")
+    public = calculate_quote(request)
+    assert public.partner is False
+    assert public.discount_percent == 0
+    assert public.lines[0].standard_discount_percent == 0
+    assert public.lines[0].discounted_unit_price == 0.0756  # prix public intact
+
+    # Déploiement « partenaire » : remise catalogue (25 %) + additionnelle (10 %).
+    monkeypatch.setenv("CALCULATOR_VIEW_PARTNER", "yes")
+    partner = calculate_quote(request)
+    assert partner.partner is True
+    assert partner.discount_percent == 10
+    assert partner.lines[0].standard_discount_percent == 25
+    assert partner.lines[0].discounted_unit_price == 0.051  # 0.0756 * 0.75 * 0.90
+
+
+def test_engagement_scale_derives_partner_discount(monkeypatch):
+    # Barème durée→% (via .env) : en mode partenaire, la remise « engagement » est
+    # DÉRIVÉE de period_months et fait autorité (prime sur discount_percent transmis).
+    monkeypatch.setenv("CALCULATOR_ENGAGEMENT_DISCOUNT_SCALE", "1:0,12:5,24:10,36:15,48:20,60:25")
+    sku = "csp:fr1:iaas:storage:bloc:medium:v1"  # public 0.0756, standard 25%
+
+    def quote(period):
+        return calculate_quote(
+            QuoteRequest(period_months=period, partner=True, lines=[QuoteLineRequest(sku=sku, quantity=1024)])
+        )
+
+    q1 = quote(1)  # 1 mois -> 0 % engagement : seule la remise partenaire (25 %) s'applique
+    assert q1.discount_percent == 0
+    assert q1.lines[0].discounted_unit_price == 0.0567  # 0.0756 * 0.75
+
+    q60 = quote(60)  # 60 mois -> 25 % engagement, empilé sur les 25 % partenaire
+    assert q60.discount_percent == 25
+    assert q60.lines[0].discounted_unit_price == 0.0425  # 0.0756 * 0.75 * 0.75
+
+
+def test_engagement_scale_ignored_without_partner(monkeypatch):
+    # Déploiement public : le barème n'a AUCUN effet (remise neutralisée à la source).
+    monkeypatch.setenv("CALCULATOR_VIEW_PARTNER", "no")
+    monkeypatch.setenv("CALCULATOR_ENGAGEMENT_DISCOUNT_SCALE", "60:25")
+    q = calculate_quote(
+        QuoteRequest(
+            period_months=60,
+            partner=True,
+            lines=[QuoteLineRequest(sku="csp:fr1:iaas:storage:bloc:medium:v1", quantity=1024)],
+        )
+    )
+    assert q.partner is False
+    assert q.discount_percent == 0
+    assert q.lines[0].discounted_unit_price == 0.0756  # prix public, barème ignoré
+
+
 def test_quote_multi_month_engagement_public_by_default():
     # csp:fr1:network:epl:1g:v1 : public 1300.80, standard 25%, engagement "36 mois".
     # Sans mode partenaire -> prix public, pas de remise, mais engagement conservé.
