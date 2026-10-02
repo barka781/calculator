@@ -7,6 +7,7 @@ COPY --chown=nginx:nginx frontend/nginx.conf /etc/nginx/conf.d/default.conf
 # Fichiers de la SPA.
 COPY --chown=nginx:nginx Version /usr/share/nginx/html/Version
 COPY --chown=nginx:nginx frontend/index.html /usr/share/nginx/html/index.html
+COPY --chown=nginx:nginx frontend/favicon.svg /usr/share/nginx/html/favicon.svg
 COPY --chown=nginx:nginx frontend/config.js /usr/share/nginx/html/config.js
 COPY --chown=nginx:nginx frontend/src /usr/share/nginx/html/src
 
