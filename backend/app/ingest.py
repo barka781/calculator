@@ -23,7 +23,7 @@ from typing import Any, Iterable, Optional
 import yaml
 from sqlalchemy.dialects.postgresql import insert
 
-from .config import catalogs_dir, licences_file
+from .config import catalogs_dir, catalogs_local_dir, licences_file
 from .db import engine, init_db, session_scope
 from .db_models import License, Product
 
@@ -166,8 +166,8 @@ def normalize_license_item(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _product_rows() -> Iterable[dict[str, Any]]:
-    root = catalogs_dir()
+def _product_rows(root: Optional[Path] = None) -> Iterable[dict[str, Any]]:
+    root = root or catalogs_dir()
     for catalog in ("cloud", "services"):
         directory = root / catalog
         if not directory.exists():
@@ -277,6 +277,14 @@ def _upsert(session, model, rows: list[dict[str, Any]], batch_size: int = 1000) 
     return total
 
 
+def with_local_products(products: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Ajoute les compléments catalogue locaux (CATALOGS_LOCAL, hors synchro
+    QuoteFlow), quelle que soit la source active. Ils sont placés AVANT : _dedupe
+    garde la dernière occurrence, donc à SKU égal la source QuoteFlow (YAML ou
+    API) l'emporte."""
+    return list(_product_rows(catalogs_local_dir())) + list(products)
+
+
 def default_provider() -> CatalogProvider:
     """Provider d'acquisition par défaut.
 
@@ -320,6 +328,8 @@ def run(provider: Optional[CatalogProvider] = None) -> dict[str, Any]:
         active = LocalYamlProvider()
         products = list(active.products())
         licenses = list(active.licenses())
+
+    products = with_local_products(products)
 
     with session_scope() as session:
         n_products = _upsert(session, Product, products)

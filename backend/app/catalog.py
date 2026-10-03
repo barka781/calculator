@@ -8,7 +8,7 @@ import re
 
 import yaml
 
-from .config import catalogs_dir, data_source
+from .config import catalogs_dir, catalogs_local_dir, data_source
 from .ingest import first_present_price
 
 
@@ -104,10 +104,8 @@ def _sort_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(items, key=lambda item: (item["category"], item["type"], item["name"].lower()))
 
 
-def _load_items_from_yaml() -> list[dict[str, Any]]:
+def _load_items_from_root(root: Path) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
-    root = catalogs_dir()
-
     for category_dir in ("cloud", "services"):
         category_path = root / category_dir
         if not category_path.exists():
@@ -140,8 +138,16 @@ def _load_items_from_yaml() -> list[dict[str, Any]]:
                     "source_file": str(yaml_file.relative_to(root)),
                 }
                 items.append(enrich_pricing(item))
+    return items
 
-    return _sort_items(items)
+
+def _load_items_from_yaml() -> list[dict[str, Any]]:
+    # Compléments locaux d'abord, catalogue QuoteFlow ensuite : à SKU égal, la
+    # dernière occurrence (QuoteFlow) l'emporte.
+    by_sku: dict[str, dict[str, Any]] = {}
+    for item in _load_items_from_root(catalogs_local_dir()) + _load_items_from_root(catalogs_dir()):
+        by_sku[item["sku"]] = item
+    return _sort_items(list(by_sku.values()))
 
 
 def _row_to_item(row: Any) -> dict[str, Any]:

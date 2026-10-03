@@ -34,7 +34,7 @@ const { calculateLocalQuote } = window.CalculatorQuoteCore;
 const SUMMARY_WIDTH_KEY = "calc.summaryWidth";
 const SUMMARY_MIN = 360;
 const SUMMARY_MAX = 820;
-const SUMMARY_DEFAULT = 600;
+const SUMMARY_DEFAULT = 420; // compact par défaut : laisse la place aux propositions comparées
 const SUMMARY_PRESETS = [
   { px: 420, label: "S", title: "Compact" },
   { px: 600, label: "M", title: "Standard" },
@@ -43,6 +43,7 @@ const SUMMARY_PRESETS = [
 
 /* ---------- Familles & groupes (mappés sur le champ `category` du backend) ---------- */
 const GROUPS = [
+  { id: "start", label: "Démarrer" },
   { id: "infra", label: "Infrastructure — IaaS" },
   { id: "platform", label: "Plateforme — PaaS & IA" },
   { id: "data", label: "Données & continuité" },
@@ -52,7 +53,8 @@ const GROUPS = [
 ];
 
 const FAMILIES = [
-  { id: "compute", label: "Compute", group: "infra", icon: "compute", categories: ["Compute"], tag: "VMware, OpenIaaS, bare metal" },
+  { id: "estimate", label: "Estimer mon projet", group: "start", icon: "bulb", kind: "estimate", tag: "Décrivez votre besoin, on compare les offres" },
+  { id: "compute", label: "Compute", group: "infra", icon: "compute", categories: ["Compute"], tag: "VM Instances, VMware, OpenIaaS, bare metal" },
   { id: "storage", label: "Stockage", group: "infra", icon: "storage", categories: ["Storage"], tag: "Bloc, fichier et objet S3" },
   { id: "network", label: "Réseau", group: "infra", icon: "network", categories: ["Network"], tag: "VPC, load balancer, connectivité" },
   { id: "housing", label: "Hébergement", group: "infra", icon: "housing", categories: ["Housing"], tag: "Housing et hébergement physique" },
@@ -174,7 +176,7 @@ const state = {
   catalog: [],
   catalogByFamily: new Map(),
   search: "",
-  activeFamily: "compute", // famille affichée dans la colonne centrale (navigation sidebar)
+  activeFamily: "estimate", // vue de la colonne centrale : estimation guidée ou famille du catalogue
   subfamily: "", // sous-famille active (sub_type) ; "" = toutes
   openCards: new Set(), // SKU des cartes produit dépliées (détail specs)
   openLines: new Set(), // clés des lignes de devis dépliées (détail term-aware)
@@ -663,10 +665,22 @@ function normalizeCatalog(item) {
     engagement: ps.engagement || item.pricing?.engagement || "",
     baseQty: Number(ps.base_quantity || item.base_quantity || 1) || 1,
     minQty: Number(ps.min_quantity || 1) || 1,
-    snc: !!meta.snc,
+    // Qualification SecNumCloud : acquise (true) ou en cours (« EN COURS » au
+    // catalogue). Ne jamais présenter une qualification en cours comme acquise.
+    snc: sncStatus(meta.snc),
     specs, // specs brutes conservées pour les puces/table en lecture seule (Lot 2)
     tags: tagsFor(item, specs),
   };
+}
+
+// Statut SecNumCloud tolérant aux variantes d'écriture du catalogue : acquis
+// (true, "oui", "yes", "qualifié"…), en cours (« EN COURS », "pending"…) ou inconnu.
+function sncStatus(raw) {
+  if (raw === true) return "yes";
+  const v = String(raw ?? "").trim().toLowerCase();
+  if (/cours|pending/.test(v)) return "pending";
+  if (["true", "yes", "oui", "qualifie", "qualifié"].includes(v)) return "yes";
+  return "";
 }
 
 function tagsFor(item, specs) {
@@ -763,7 +777,8 @@ function specChipsHtml(p) {
 
 // Table détaillée (carte dépliée) : toutes les specs + ligne facturation.
 function specRowsHtml(p) {
-  const rows = specEntries(p).map((e) => `<div class="row"><span>${esc(e.label)}</span><span>${e.val}</span></div>`);
+  const rows = [`<div class="row"><span>Référence</span><span class="mono">${highlight(p.sku, state.search)}</span></div>`];
+  rows.push(...specEntries(p).map((e) => `<div class="row"><span>${esc(e.label)}</span><span>${e.val}</span></div>`));
   if (p.engagement) rows.push(`<div class="row"><span>Facturation</span><span>${esc(p.engagement)}</span></div>`);
   return rows.join("");
 }
@@ -1157,7 +1172,7 @@ function summarySkeleton() {
             <input id="project" class="input" placeholder="Nommer cette cotation" title="Renomme l'onglet actif" value="${esc(state.projectName)}" />
           </div>
           <div class="field-block">
-            <label>Durée d'engagement / projection</label>
+            <label>Durée du projet</label>
             <div class="segmented" id="period-seg" role="group" aria-label="Durée de projection">${periodBtns}</div>
           </div>
         </div>
@@ -1502,6 +1517,14 @@ function renderSidebar() {
 
 function navItem(f, q, cartByFam) {
   let countHtml = "";
+  if (f.kind === "estimate") {
+    const active = !q && state.activeFamily === f.id;
+    return `
+    <button class="nav-item nav-item--start ${active ? "is-active" : ""}" data-family-nav="${f.id}" aria-current="${active ? "page" : "false"}">
+      <span class="nav-item__ico">${familyIcon(f)}</span>
+      <span class="nav-item__label">${esc(f.label)}</span>
+    </button>`;
+  }
   if (f.kind === "licenses") {
     const total = state.health?.license_items || (state.lic.loaded ? state.lic.all.length : 0);
     if (q) {
@@ -1552,6 +1575,10 @@ function renderMain() {
   }
 
   const fam = FAMILIES.find((f) => f.id === state.activeFamily) || FAMILIES[0];
+  if (fam.kind === "estimate") {
+    renderEstimateView(body);
+    return;
+  }
   if (fam.kind === "licenses") {
     renderLicensesView(body, fam);
     return;
@@ -1578,10 +1605,10 @@ function renderFamilyView(body, fam) {
       </div>`;
   }
 
-  // Encart pédago : le dimensionnement libre relèvera du calculateur d'architecture (Phase 2).
+  // Encart : le visiteur qui raisonne en serveurs (vCPU / RAM) est renvoyé vers l'estimation guidée.
   const callout =
     fam.id === "compute"
-      ? `<div class="callout">${I.bulb}<span>Besoin de dimensionner librement (vCPU / RAM / disque cibles) ? Ce sera le rôle du <b>calculateur d'architecture</b> (à venir). Ici, on choisit des références aux caractéristiques figées.</span></div>`
+      ? `<div class="callout">${I.bulb}<span>Vous raisonnez en serveurs (vCPU, mémoire, disque) plutôt qu'en références ? <button type="button" class="linkish" data-family-nav="estimate">Estimez votre projet</button> : nous comparons pour vous VM mutualisées et serveurs dédiés.</span></div>`
       : "";
 
   const countLabel = activeSub
@@ -1684,8 +1711,8 @@ function productCard(p, fam) {
   const tag = p.subType ? prettify(p.subType) : fam ? fam.label : prettify(p.category);
 
   const metaChips = [
-    `<span class="chip chip--sku">${highlight(p.sku, state.search)}</span>`,
-    p.snc ? `<span class="chip chip--snc">SecNumCloud</span>` : "",
+    p.snc === "yes" ? `<span class="chip chip--snc">SecNumCloud</span>` : "",
+    p.snc === "pending" ? `<span class="chip chip--pending">SecNumCloud en cours</span>` : "",
     p.engagement && engagementMonths(p.engagement) > 1 ? `<span class="chip chip--eng">${esc(p.engagement)}</span>` : "",
   ]
     .filter(Boolean)
@@ -1698,10 +1725,9 @@ function productCard(p, fam) {
          <button class="btn btn--primary btn--sm" data-add="${esc(p.sku)}">Ajouter</button>
        </div>`;
 
-  const toggle = hasSpecs
-    ? `<button class="pc__details-toggle" type="button" data-card-toggle="${esc(p.sku)}" aria-expanded="${open ? "true" : "false"}">${I.chevron} ${open ? "Masquer le détail" : "Voir le détail"}</button>`
-    : "";
-  const specTable = open && hasSpecs ? `<div class="spec-table">${specRowsHtml(p)}</div>` : "";
+  // Détail toujours disponible : il porte la référence (SKU), retirée de la carte.
+  const toggle = `<button class="pc__details-toggle" type="button" data-card-toggle="${esc(p.sku)}" aria-expanded="${open ? "true" : "false"}">${I.chevron} ${open ? "Masquer le détail" : "Voir le détail"}</button>`;
+  const specTable = open ? `<div class="spec-table">${specRowsHtml(p)}</div>` : "";
 
   return `
     <div class="product-card ${line ? "is-in-cart" : ""} ${open ? "is-open" : ""}">
@@ -1875,7 +1901,7 @@ function renderSummaryLines() {
     root.innerHTML = `
       <div class="summary__empty">
         ${I.cart}
-        <div>Votre devis est vide.<br />Dépliez une famille et ajoutez des produits.</div>
+        <div>Votre devis est vide.<br />Estimez votre projet, ou parcourez le catalogue et ajoutez des produits.</div>
       </div>`;
     return;
   }
@@ -2051,8 +2077,15 @@ function renderSummaryTotals() {
       ${byFamily.size > 1 ? `<div class="fam-block"><div class="fam-block__title">Répartition mensuelle</div>${famRows}</div>` : ""}
       ${showMonthlyPublic ? `<div class="total-row total-row--muted"><span class="lbl">Mensuel public</span><span class="val">${esc(money(q.monthly_public_total))}</span></div>` : ""}
       ${breakdown.join("")}
-      <div class="total-row"><span class="lbl">Projection ${esc(monthsLabel)}</span><span class="val">${esc(money(q.period_discounted_total))}</span></div>
-      <div class="total-row"><span class="lbl">Total à l'engagement</span><span class="val">${esc(money(q.total_on_engagement))}</span></div>
+      <div class="total-row"><span class="lbl">Coût sur ${esc(monthsLabel)}</span><span class="val">${esc(money(q.period_discounted_total))}</span></div>
+      ${
+        // Engagement contractuel minimum (somme des durées minimales par produit) :
+        // affiché seulement s'il diffère d'un simple mois, pour ne pas le confondre
+        // avec la durée du projet choisie ci-dessus.
+        q.total_on_engagement > q.monthly_discounted_total + q.one_time_total + 0.005
+          ? `<div class="total-row" title="Montant dû sur la durée minimale d'engagement de chaque produit (par exemple 12 mois pour certaines lames GPU)"><span class="lbl">Engagement minimum du contrat</span><span class="val">${esc(money(q.total_on_engagement))}</span></div>`
+          : ""
+      }
       ${q.savings_total > 0.005 ? `<div class="total-row total-row--save"><span class="lbl">Économie sur ${esc(monthsLabel)}</span><span class="val">${esc(money(q.savings_total))}</span></div>` : ""}
     </div>
     ${state.quoteSource === "local" ? `<div class="total-sub">Calcul local hors-ligne · export indisponible jusqu'au retour de l'API</div>` : ""}
@@ -2081,8 +2114,10 @@ function wireEvents() {
 }
 
 function onClick(e) {
-  const t = e.target.closest("[data-family-nav],[data-subfamily],[data-card-toggle],[data-card-line],[data-period],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close],[data-summary-size],[data-summary-toggle],[data-summary-close],[data-toggle-config],[data-toggle-totals],[data-history-open],[data-history-close],[data-history-save],[data-history-reopen],[data-history-delete]");
+  const t = e.target.closest("[data-family-nav],[data-subfamily],[data-card-toggle],[data-card-line],[data-period],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close],[data-summary-size],[data-summary-toggle],[data-summary-close],[data-toggle-config],[data-toggle-totals],[data-history-open],[data-history-close],[data-history-save],[data-history-reopen],[data-history-delete],[data-est-usage],[data-est-size],[data-est-qty],[data-est-custom],[data-est-remove],[data-est-add],[data-est-class],[data-est-detail],[data-est-apply]");
   if (!t) return;
+
+  if (onEstimateClick(t)) return;
 
   // Historique des devis (snapshots locaux).
   if (t.hasAttribute("data-history-open")) {
@@ -2242,12 +2277,14 @@ function onClick(e) {
   if (t.dataset.step) {
     const { sku, source } = t.dataset;
     bumpLine(sku, source, t.dataset.step === "inc" ? 1 : -1);
+    resizeSupportAfterEdit(sku);
     afterCartChange(source);
     return;
   }
 
   if (t.dataset.remove) {
     removeLine(t.dataset.remove, t.dataset.source || "catalog");
+    resizeSupportAfterEdit(t.dataset.remove);
     afterCartChange(t.dataset.source || "catalog");
     return;
   }
@@ -2293,6 +2330,7 @@ function addProduct(sku, source) {
   const input = document.querySelector(`[data-qty-input="${CSS.escape(lineKey(sku, source))}"]`);
   const qty = input ? Number(input.value) : source === "license" ? 1 : meta.baseQty || 1;
   upsertLine(meta, qty || meta.minQty || 1);
+  if (source === "catalog") resizeSupportAfterEdit(sku);
   announce(`${meta.name} ajouté au devis`); // [A4]
   afterCartChange(source);
 }
@@ -2407,6 +2445,11 @@ async function exportQuote(format, btn) {
 function onInput(e) {
   const el = e.target;
 
+  if (el.dataset.estField) {
+    onEstimateInput(el);
+    return;
+  }
+
   if (el.id === "q-global") {
     state.search = el.value;
     // Recherche unifiée : un seul champ pilote le catalogue ET les licences.
@@ -2440,6 +2483,13 @@ function onInput(e) {
 function onChange(e) {
   const el = e.target;
 
+  if (el.dataset.estOpt) {
+    state.est[el.dataset.estOpt] = el.checked;
+    persistEstimate();
+    renderEstimateLive();
+    return;
+  }
+
   if (el.id === "lic-vendor") {
     state.lic.vendor = el.value;
     state.lic.page = 1;
@@ -2461,9 +2511,442 @@ function onChange(e) {
     if (!Number.isFinite(v) || v < (line.minQty || 1)) v = line.minQty || 1;
     line.quantity = v;
     persistCart();
+    resizeSupportAfterEdit(sku);
     afterCartChange(source);
     return;
   }
+}
+
+/* ---------- Estimation guidée (« Estimer mon projet ») ----------
+   Le visiteur décrit ses serveurs ; on compare trois façons de les héberger
+   (VM mutualisées, lames OpenIaaS, lames VMware) avec les prix publics du
+   catalogue, puis il ajoute l'option choisie au devis. Calcul : sizing.js.
+   Seuls le résumé et les propositions sont re-rendus pendant la saisie, pour
+   ne jamais faire perdre le focus d'un champ. */
+const Sizing = window.CalculatorSizing;
+const ESTIMATE_KEY = "calc.estimate";
+
+function sanitizeServer(s) {
+  const int = (v, lo, hi, d) => clamp(Math.round(Number(v)) || d, lo, hi);
+  return {
+    name: String(s?.name || "Serveur").slice(0, 60),
+    size: Sizing.SIZES.some((z) => z.id === s?.size) ? s.size : "custom",
+    vcpu: int(s?.vcpu, 1, 256, 2),
+    ram: int(s?.ram, 1, 2048, 4),
+    disk: int(s?.disk, 10, 65536, 50),
+    qty: int(s?.qty, 1, 500, 1),
+    custom: !!s?.custom,
+  };
+}
+
+function defaultEstimate(usageId = "business-app") {
+  const usage = Sizing.usageById(usageId);
+  return {
+    usage: usage.id,
+    servers: Sizing.serversForUsage(usage.id).map(sanitizeServer),
+    ha: false,
+    backup: true,
+    vmClass: usage.vmClass || "gp",
+  };
+}
+
+function loadEstimate() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ESTIMATE_KEY) || "null");
+    if (raw && Array.isArray(raw.servers)) {
+      return {
+        usage: String(raw.usage || "custom"),
+        servers: raw.servers.slice(0, 50).map(sanitizeServer),
+        ha: !!raw.ha,
+        backup: raw.backup !== false,
+        vmClass: Sizing.VM_CLASSES.some((c) => c.id === raw.vmClass) ? raw.vmClass : "gp",
+      };
+    }
+  } catch {
+    /* stockage indisponible ou corrompu : estimation par défaut */
+  }
+  return defaultEstimate();
+}
+
+function persistEstimate() {
+  try {
+    localStorage.setItem(ESTIMATE_KEY, JSON.stringify(state.est));
+  } catch {
+    /* stockage indisponible : non bloquant */
+  }
+}
+
+state.est = loadEstimate();
+state.estDetail = new Set(); // propositions dont le détail est déplié
+state.estApplied = ""; // proposition tout juste ajoutée au devis (retour visuel)
+
+const estimateInput = () => ({
+  servers: state.est.servers,
+  ha: state.est.ha,
+  backup: state.est.backup,
+  vmClass: state.est.vmClass,
+});
+
+const plural = (n, one, many) => `${num(n)} ${n > 1 ? many : one}`;
+
+function renderEstimateView(body) {
+  const usages = Sizing.USAGES.map((u) => {
+    const on = state.est.usage === u.id;
+    return `
+      <button type="button" class="usage ${on ? "is-active" : ""}" data-est-usage="${u.id}" aria-pressed="${on}">
+        <span class="usage__label">${esc(u.label)}</span>
+        <span class="usage__hint">${esc(u.hint)}</span>
+      </button>`;
+  }).join("");
+
+  body.innerHTML = `
+    <div class="est">
+      <div class="est__hero">
+        <h1 class="est__title">Combien coûtera votre projet ?</h1>
+        <p class="est__lede">Décrivez vos serveurs : nous comparons pour vous trois façons de les héberger chez Cloud Temple, en France. Prix publics hors taxes, par mois, calculés en direct.</p>
+      </div>
+
+      <section class="est__step" aria-labelledby="est-s1">
+        <h2 class="est__h" id="est-s1"><span class="est__num" aria-hidden="true">1</span>Votre projet</h2>
+        <p class="est__help">Choisissez le cas le plus proche : nous préremplissons vos serveurs, vous ajustez ensuite.</p>
+        <div class="usage-grid" role="group" aria-label="Type de projet">${usages}</div>
+      </section>
+
+      <section class="est__step" aria-labelledby="est-s2">
+        <h2 class="est__h" id="est-s2"><span class="est__num" aria-hidden="true">2</span>Vos serveurs</h2>
+        <div class="srv-list" id="est-servers">${estServersHtml()}</div>
+        <div class="est__row">
+          <button type="button" class="btn btn--ghost btn--sm" data-est-add>${I.plus} Ajouter un serveur</button>
+          <span class="est__totals" id="est-totals"></span>
+        </div>
+      </section>
+
+      <section class="est__step" aria-labelledby="est-s3">
+        <h2 class="est__h" id="est-s3"><span class="est__num" aria-hidden="true">3</span>Vos exigences</h2>
+        <div class="opt-list">
+          ${optSwitch("ha", "Haute disponibilité", "Vos services restent en ligne si un serveur tombe en panne : capacité de secours et deux zones de disponibilité.")}
+          ${optSwitch("backup", "Sauvegarde quotidienne", "Copie de vos serveurs et de leurs données, incluse dans le prix des serveurs dédiés. Pour les VM mutualisées, nos équipes la chiffrent avec vous.")}
+        </div>
+      </section>
+
+      <section class="est__results" aria-labelledby="est-s4">
+        <h2 class="est__h" id="est-s4">Nos propositions</h2>
+        <div class="offer-grid" id="est-offers"></div>
+        ${estHypothesesHtml()}
+      </section>
+    </div>`;
+  renderEstimateLive();
+}
+
+function optSwitch(key, label, hint) {
+  const on = !!state.est[key];
+  return `
+    <label class="opt">
+      <input type="checkbox" class="opt__input" data-est-opt="${key}" ${on ? "checked" : ""} />
+      <span class="opt__switch" aria-hidden="true"></span>
+      <span class="opt__text"><span class="opt__label">${esc(label)}</span><span class="opt__hint">${esc(hint)}</span></span>
+    </label>`;
+}
+
+function serverSpecs(s) {
+  return `${num(s.vcpu)} vCPU · ${num(s.ram)} Go de RAM · ${num(s.disk)} Go de disque`;
+}
+
+function estServersHtml() {
+  if (!state.est.servers.length) {
+    return `<div class="srv-empty">Aucun serveur pour l'instant. Ajoutez-en un, ou choisissez un type de projet ci-dessus.</div>`;
+  }
+  return state.est.servers
+    .map((s, i) => {
+      const sizes = Sizing.SIZES.map((z) => {
+        const on = s.size === z.id;
+        return `<button type="button" class="${on ? "is-active" : ""}" data-est-size="${z.id}" data-idx="${i}" aria-pressed="${on}" title="${esc(`${z.hint} : ${z.vcpu} vCPU, ${z.ram} Go de RAM, ${z.disk} Go de disque`)}">${esc(z.label)}</button>`;
+      }).join("");
+      const field = (key, label, min, max) => `
+        <label class="srv__field">
+          <span>${esc(label)}</span>
+          <input class="input" type="number" inputmode="numeric" min="${min}" max="${max}" step="1" value="${s[key]}" data-est-field="${key}" data-idx="${i}" />
+        </label>`;
+      return `
+        <div class="srv">
+          <div class="srv__main">
+            <input class="input srv__name" value="${esc(s.name)}" maxlength="60" data-est-field="name" data-idx="${i}" aria-label="Nom du serveur ${i + 1}" />
+            <div class="segmented srv__sizes" role="group" aria-label="Taille du serveur ${esc(s.name)}">${sizes}</div>
+            <div class="srv__qty" role="group" aria-label="Nombre de serveurs identiques">
+              <button type="button" data-est-qty="-1" data-idx="${i}" aria-label="Un serveur de moins">−</button>
+              <input type="number" min="1" max="500" step="1" value="${s.qty}" data-est-field="qty" data-idx="${i}" aria-label="Nombre de serveurs ${esc(s.name)}" />
+              <button type="button" data-est-qty="1" data-idx="${i}" aria-label="Un serveur de plus">+</button>
+            </div>
+            <button type="button" class="btn btn--danger-ghost btn--icon" data-est-remove="${i}" title="Retirer ce serveur" aria-label="Retirer ${esc(s.name)}">${I.trash}</button>
+          </div>
+          <div class="srv__specs">
+            <span id="est-spec-${i}">${serverSpecs(s)}</span>
+            <button type="button" class="linkish" data-est-custom="${i}" aria-expanded="${s.custom}">${s.custom ? "Masquer le détail" : "Personnaliser"}</button>
+          </div>
+          ${
+            s.custom
+              ? `<div class="srv__custom">${field("vcpu", "vCPU", 1, 256)}${field("ram", "RAM (Go)", 1, 2048)}${field("disk", "Disque (Go)", 10, 65536)}</div>`
+              : ""
+          }
+        </div>`;
+    })
+    .join("");
+}
+
+function estHypothesesHtml() {
+  const z = Sizing.SIZING;
+  return `
+    <details class="est__hyp">
+      <summary>Comment nous calculons</summary>
+      <ul>
+        <li><b>VM mutualisées (VM Instances)</b> : prix public par vCPU et par Go de RAM selon la classe choisie. Disque système inclus jusqu'à ${num(z.vmiIncludedDiskGb)} Go par serveur, le reste facturé au Go.</li>
+        <li><b>Serveurs dédiés</b> : nous rangeons vos serveurs sur le modèle de lame le moins cher, chaque serveur tenant entier sur une lame, avec ${num(z.vcpuPerThread)} vCPU par thread physique et ${num(z.ramUsableRatio * 100)} % de la mémoire utilisable.</li>
+        <li><b>Haute disponibilité</b> : deux zones de disponibilité ; chaque VM mutualisée est doublée dans la seconde zone, et les serveurs dédiés reçoivent une lame de secours (deux lames au minimum).</li>
+        <li><b>Socle</b>, payé une fois pour tout votre environnement : activation du tenant, zone de disponibilité et support Standard (${num(z.supportRate * 100)} % des ressources, ${money(z.supportMinimum, true)} minimum).</li>
+        <li>Estimation indicative en prix publics hors taxes, à confirmer avec nos équipes.</li>
+      </ul>
+    </details>`;
+}
+
+// Re-rendu léger : totaux et propositions (les champs de saisie restent en place).
+function renderEstimateLive() {
+  const totalsEl = document.querySelector("#est-totals");
+  const offersEl = document.querySelector("#est-offers");
+  if (!totalsEl || !offersEl) return;
+
+  const results = Sizing.estimateAll(estimateInput(), state.catalog);
+  const t = results[0].totals;
+  totalsEl.textContent = t.vms
+    ? `${plural(t.vms, "serveur", "serveurs")} · ${num(t.vcpu)} vCPU · ${num(t.ram)} Go de RAM · ${num(t.disk)} Go de disque`
+    : "";
+
+  const priced = results.filter((r) => r.ok && !r.missing.length);
+  const cheapest = priced.length ? priced.reduce((a, b) => (b.monthly < a.monthly ? b : a)) : null;
+  offersEl.innerHTML = results.map((r) => offerCardHtml(r, cheapest)).join("");
+}
+
+// Statut SecNumCloud lu dans le catalogue, sur le produit serveur retenu (lame
+// ou vCPU VM Instances) : jamais déduit du nom de l'offre.
+function offerQualification(r) {
+  const main = r.ok ? r.lines.find((l) => l.group === "servers") : null;
+  const item = main ? state.catalog.find((p) => p.sku === main.sku) : null;
+  return item ? item.snc : "";
+}
+
+function offerCardHtml(r, cheapest) {
+  const o = r.offer;
+  const snc = offerQualification(r);
+  const qualified = snc === "yes";
+  const badges = [
+    cheapest && cheapest.offer.id === o.id ? `<span class="offer__tag offer__tag--best">Le plus économique</span>` : "",
+    qualified ? `<span class="offer__tag offer__tag--sens">Pour les données sensibles</span>` : "",
+  ].join("");
+  const qual = qualified
+    ? `<span class="chip chip--snc">Qualifié SecNumCloud</span>`
+    : snc === "pending"
+      ? `<span class="chip chip--pending">SecNumCloud en cours</span>`
+      : "";
+
+  let body;
+  if (!r.ok) {
+    body = `<p class="offer__msg">${
+      r.reason === "too_big"
+        ? "Un de vos serveurs dépasse la capacité d'une lame. Nos équipes peuvent vous proposer une configuration adaptée."
+        : "Ajoutez au moins un serveur pour voir le prix."
+    }</p>`;
+  } else if (r.missing.length) {
+    body = `<p class="offer__msg">Tarif momentanément indisponible : le catalogue n'a pas pu être chargé.</p>`;
+  } else {
+    const open = state.estDetail.has(o.id);
+    const applied = state.estApplied === o.id;
+    const what =
+      o.id === "vmi"
+        ? `<div class="segmented offer__class" role="group" aria-label="Classe de VM">${Sizing.VM_CLASSES.map(
+            (c) =>
+              `<button type="button" class="${state.est.vmClass === c.id ? "is-active" : ""}" data-est-class="${c.id}" aria-pressed="${state.est.vmClass === c.id}" title="${esc(c.hint)}">${esc(c.label)}</button>`
+          ).join("")}</div>
+          <p class="offer__what">${esc((Sizing.VM_CLASSES.find((c) => c.id === state.est.vmClass) || Sizing.VM_CLASSES[1]).hint)}</p>`
+        : `<p class="offer__what">${plural(r.blade.count, "lame dédiée", "lames dédiées")} ${esc(r.blade.item.name)}</p>`;
+    const rows = r.lines
+      .map(
+        (l) => `
+        <div class="offer__line">
+          <span>${esc(l.label)}</span>
+          <span class="offer__qty">${num(l.quantity)} ${esc(l.unit)}</span>
+          <span class="offer__amt">${money(l.total)}</span>
+        </div>`
+      )
+      .join("");
+    body = `
+      <div class="offer__price"><b>${money(r.monthly)}</b><span>HT / mois</span></div>
+      <div class="offer__split">
+        <span>Serveurs <b>${money(r.serversMonthly)}</b></span>
+        <span title="Payé une fois pour tout votre environnement">Socle <b>${money(r.baseMonthly)}</b></span>
+      </div>
+      ${what}
+      <button type="button" class="linkish offer__toggle" data-est-detail="${o.id}" aria-expanded="${open}">${I.chevron} ${open ? "Masquer le détail" : "Voir le détail"}</button>
+      ${open ? `<div class="offer__lines">${rows}</div>` : ""}
+      <button type="button" class="btn btn--primary offer__cta ${applied ? "is-done" : ""}" data-est-apply="${o.id}" ${applied ? 'aria-disabled="true"' : ""}>${
+        applied ? "Ajouté au devis ✓" : `${I.plus} Ajouter au devis`
+      }</button>`;
+  }
+
+  return `
+    <article class="offer ${cheapest && cheapest.offer.id === o.id ? "is-best" : ""}">
+      <div class="offer__tags">${badges}</div>
+      <h3 class="offer__title">${esc(o.label)}</h3>
+      <div class="offer__sub"><span>${esc(o.product)}</span>${qual}</div>
+      <p class="offer__hint">${esc(o.hint)}</p>
+      ${body}
+    </article>`;
+}
+
+function applyEstimate(offerId) {
+  const r = Sizing.estimateOffer(offerId, estimateInput(), state.catalog);
+  if (!r.ok || r.missing.length) return;
+  r.lines.forEach((l) => {
+    const meta = state.catalog.find((p) => p.sku === l.sku);
+    if (!meta) return;
+    const existing = findLine(l.sku, "catalog");
+    const current = existing ? existing.quantity : 0;
+    // Le socle (tenant, zones) se paie une fois par environnement : on garde la
+    // plus grande quantité au lieu de l'additionner. Les serveurs, eux, s'ajoutent
+    // à ceux déjà présents dans le devis. Le support est recalculé juste après.
+    upsertLine(meta, l.group === "base" ? Math.max(current, l.quantity) : current + l.quantity);
+  });
+  resizeSupportLine();
+  if (!state.projectName.trim()) {
+    state.projectName = Sizing.usageById(state.est.usage).label;
+    persistQuotes();
+  }
+  state.estApplied = offerId;
+  announce(`${r.offer.label} ajouté au devis : ${money(r.monthly)} hors taxes par mois`);
+  afterCartChange("catalog");
+  window.setTimeout(() => {
+    if (state.estApplied !== offerId) return;
+    state.estApplied = "";
+    renderEstimateLive();
+  }, 2500);
+}
+
+// Support Standard = 5 % des ressources de TOUT le devis (500 € minimum) : après
+// un ajout, on le recalcule sur l'ensemble des lignes catalogue hors socle, pour
+// qu'additionner deux estimations donne le même support qu'une estimation unique.
+function resizeSupportLine() {
+  const k = Sizing.SIZING.skus;
+  const support = findLine(k.support, "catalog");
+  const supportItem = state.catalog.find((p) => p.sku === k.support);
+  if (!support || !supportItem) return;
+  const base = new Set([k.tenant, k.az, k.support]);
+  const resources = state.cart
+    .filter((l) => l.source === "catalog" && !base.has(l.sku))
+    .reduce((sum, l) => sum + (state.catalog.find((p) => p.sku === l.sku)?.publicPrice || 0) * l.quantity, 0);
+  upsertLine(supportItem, Sizing.supportPackages(resources, supportItem));
+}
+
+// Après une modification manuelle du panier : le support suit les ressources,
+// sauf si c'est la ligne de support elle-même que le visiteur vient de régler.
+function resizeSupportAfterEdit(editedSku) {
+  if (editedSku !== Sizing.SIZING.skus.support) resizeSupportLine();
+}
+
+// Re-rendu de la liste des serveurs, en redonnant le focus à l'élément équivalent.
+function rerenderServers(focusSelector) {
+  const list = document.querySelector("#est-servers");
+  if (list) list.innerHTML = estServersHtml();
+  persistEstimate();
+  renderEstimateLive();
+  if (focusSelector) document.querySelector(focusSelector)?.focus();
+}
+
+// Clics de l'estimateur. Renvoie true si l'événement a été traité.
+function onEstimateClick(t) {
+  const idx = Number(t.dataset.idx);
+  const s = Number.isInteger(idx) ? state.est.servers[idx] : null;
+
+  if (t.dataset.estUsage) {
+    state.est = { ...defaultEstimate(t.dataset.estUsage), ha: state.est.ha, backup: state.est.backup };
+    persistEstimate();
+    renderMain();
+    document.querySelector(`[data-est-usage="${t.dataset.estUsage}"]`)?.focus();
+    return true;
+  }
+  if (t.dataset.estSize && s) {
+    const z = Sizing.SIZES.find((x) => x.id === t.dataset.estSize);
+    Object.assign(s, { size: z.id, vcpu: z.vcpu, ram: z.ram, disk: z.disk });
+    rerenderServers(`[data-est-size="${z.id}"][data-idx="${idx}"]`);
+    return true;
+  }
+  if (t.dataset.estQty && s) {
+    s.qty = clamp(s.qty + Number(t.dataset.estQty), 1, 500);
+    rerenderServers(`[data-est-qty="${t.dataset.estQty}"][data-idx="${idx}"]`);
+    return true;
+  }
+  if (t.dataset.estCustom) {
+    const srv = state.est.servers[Number(t.dataset.estCustom)];
+    if (srv) srv.custom = !srv.custom;
+    rerenderServers(`[data-est-custom="${t.dataset.estCustom}"]`);
+    return true;
+  }
+  if (t.dataset.estRemove) {
+    state.est.servers.splice(Number(t.dataset.estRemove), 1);
+    state.est.usage = "custom";
+    rerenderServers("[data-est-add]");
+    return true;
+  }
+  if (t.hasAttribute("data-est-add")) {
+    const n = state.est.servers.length + 1;
+    state.est.servers.push(sanitizeServer(Sizing.serverFromSize("M", { name: `Serveur ${n}` })));
+    rerenderServers(`[data-est-field="name"][data-idx="${n - 1}"]`);
+    return true;
+  }
+  if (t.dataset.estClass) {
+    state.est.vmClass = t.dataset.estClass;
+    persistEstimate();
+    renderEstimateLive();
+    document.querySelector(`[data-est-class="${t.dataset.estClass}"]`)?.focus();
+    return true;
+  }
+  if (t.dataset.estDetail) {
+    const id = t.dataset.estDetail;
+    if (state.estDetail.has(id)) state.estDetail.delete(id);
+    else state.estDetail.add(id);
+    renderEstimateLive();
+    document.querySelector(`[data-est-detail="${id}"]`)?.focus();
+    return true;
+  }
+  if (t.dataset.estApply) {
+    // Déjà ajouté à l'instant : un second clic ne double pas les serveurs.
+    if (state.estApplied === t.dataset.estApply) return true;
+    applyEstimate(t.dataset.estApply);
+    document.querySelector(`[data-est-apply="${t.dataset.estApply}"]`)?.focus();
+    return true;
+  }
+  return false;
+}
+
+// Saisie dans un champ de l'estimateur (nom, quantité, vCPU, RAM, disque).
+function onEstimateInput(el) {
+  const s = state.est.servers[Number(el.dataset.idx)];
+  if (!s) return;
+  const key = el.dataset.estField;
+  if (key === "name") {
+    s.name = el.value.slice(0, 60);
+    persistEstimate();
+    return;
+  }
+  if (el.value === "") return; // champ en cours d'effacement : on attend une valeur
+  const next = sanitizeServer({ ...s, [key]: el.value });
+  s[key] = next[key];
+  if (key !== "qty") s.size = "custom";
+  const spec = document.querySelector(`#est-spec-${Number(el.dataset.idx)}`);
+  if (spec) spec.textContent = serverSpecs(s);
+  document.querySelectorAll(`[data-est-size][data-idx="${Number(el.dataset.idx)}"]`).forEach((b) => {
+    b.classList.toggle("is-active", b.dataset.estSize === s.size);
+    b.setAttribute("aria-pressed", String(b.dataset.estSize === s.size));
+  });
+  persistEstimate();
+  renderEstimateLive();
 }
 
 /* ---------- Boot ---------- */

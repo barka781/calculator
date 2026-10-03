@@ -1,0 +1,139 @@
+# Compléments catalogue maîtrisés par le calculator (hors synchro QuoteFlow).
+#
+# VM Instances — offre de compute mutualisée (« VM as a Service »), absente du
+# catalogue QuoteFlow au 2026-10-03. Prix publics HT relevés sur la grille
+# officielle https://www.cloud-temple.com/nos-tarifs-publics/ le 2026-10-03
+# (prix mensuel sur la base de 730 h ; facturation horaire, engagement 1 h).
+#
+# PROVISOIRE : SKU nommés par le calculator, à remplacer par les SKU officiels
+# et à faire valider par l'avant-vente (propriétaire des prix publics). Si
+# QuoteFlow publie un jour ces SKU, sa version prend le pas sur celle-ci.
+#
+# Non repris : la classe « Enterprise » (présente dans la grille, non décrite
+# dans la documentation produit) et l'option de sauvegarde (prix non publié).
+version: "2026-10-03"
+metadata:
+  category: "compute"
+  type: "vm_instances"
+  description: "VM Instances : machines virtuelles mutualisées, facturées par vCPU et par Gio de RAM"
+  status: "active"
+
+items:
+  - sku: "csp:fr1:iaas:vmi:dev:vcpu:v1"
+    name: "VM Instances DEV - vCPU"
+    description: "Classe Développement : ressources mutualisées, pour le test et la recette"
+    type: "vm_instances"
+    unit: "vCPU"
+    base_quantity: 1
+    pricing:
+      public_price: 11.03
+      engagement: "Sans engagement (facturation horaire)"
+      min_quantity: 1
+    specs:
+      vm_class: "dev"
+    metadata:
+      snc: "EN COURS"
+      provisional: true
+      version: "v1"
+
+  - sku: "csp:fr1:iaas:vmi:dev:ram:v1"
+    name: "VM Instances DEV - RAM"
+    description: "Classe Développement : mémoire vive, par Gio"
+    type: "vm_instances"
+    unit: "Gio RAM"
+    base_quantity: 1
+    pricing:
+      public_price: 2.88
+      engagement: "Sans engagement (facturation horaire)"
+      min_quantity: 1
+    specs:
+      vm_class: "dev"
+    metadata:
+      snc: "EN COURS"
+      provisional: true
+      version: "v1"
+
+  - sku: "csp:fr1:iaas:vmi:gp:vcpu:v1"
+    name: "VM Instances General Purpose - vCPU"
+    description: "Classe Usage général : ressources mutualisées, pour la production courante"
+    type: "vm_instances"
+    unit: "vCPU"
+    base_quantity: 1
+    pricing:
+      public_price: 13.98
+      engagement: "Sans engagement (facturation horaire)"
+      min_quantity: 1
+    specs:
+      vm_class: "gp"
+    metadata:
+      snc: "EN COURS"
+      provisional: true
+      version: "v1"
+
+  - sku: "csp:fr1:iaas:vmi:gp:ram:v1"
+    name: "VM Instances General Purpose - RAM"
+    description: "Classe Usage général : mémoire vive, par Gio"
+    type: "vm_instances"
+    unit: "Gio RAM"
+    base_quantity: 1
+    pricing:
+      public_price: 3.58
+      engagement: "Sans engagement (facturation horaire)"
+      min_quantity: 1
+    specs:
+      vm_class: "gp"
+    metadata:
+      snc: "EN COURS"
+      provisional: true
+      version: "v1"
+
+  - sku: "csp:fr1:iaas:vmi:perf:vcpu:v1"
+    name: "VM Instances Performance - vCPU"
+    description: "Classe Performance : vCPU dédiés, pour les charges exigeantes"
+    type: "vm_instances"
+    unit: "vCPU"
+    base_quantity: 1
+    pricing:
+      public_price: 19.71
+      engagement: "Sans engagement (facturation horaire)"
+      min_quantity: 1
+    specs:
+      vm_class: "perf"
+    metadata:
+      snc: "EN COURS"
+      provisional: true
+      version: "v1"
+
+  - sku: "csp:fr1:iaas:vmi:perf:ram:v1"
+    name: "VM Instances Performance - RAM"
+    description: "Classe Performance : mémoire vive, par Gio"
+    type: "vm_instances"
+    unit: "Gio RAM"
+    base_quantity: 1
+    pricing:
+      public_price: 4.93
+      engagement: "Sans engagement (facturation horaire)"
+      min_quantity: 1
+    specs:
+      vm_class: "perf"
+    metadata:
+      snc: "EN COURS"
+      provisional: true
+      version: "v1"
+
+  - sku: "csp:fr1:iaas:vmi:storage:standard:v1"
+    name: "VM Instances - Stockage bloc Standard"
+    description: "Disques supplémentaires des VM (1 500 IOPS/To). Disque système de 15 à 100 Go inclus. Tarif publié, applicable à partir de janvier 2027."
+    type: "vm_instances"
+    unit: "Gio"
+    base_quantity: 1
+    pricing:
+      public_price: 0.2077
+      engagement: "Sans engagement (facturation horaire)"
+      min_quantity: 1
+    specs:
+      iops_per_tb: 1500
+    metadata:
+      snc: "EN COURS"
+      provisional: true
+      version: "v1"

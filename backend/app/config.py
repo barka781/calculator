@@ -149,6 +149,16 @@ def catalogs_dir() -> Path:
     return data_root() / "CATALOGS"
 
 
+def catalogs_local_dir() -> Path:
+    """Compléments catalogue maîtrisés par le calculator (ex. VM Instances).
+
+    Hors périmètre de la synchro QuoteFlow (qui ne gère que CATALOGS/ et
+    LICENCES/) : jamais écrasés ni supprimés par elle. En cas de SKU identique,
+    la version QuoteFlow prévaut (cf. catalog.py et ingest.py).
+    """
+    return data_root() / "CATALOGS_LOCAL"
+
+
 def licences_file() -> Path:
     return data_root() / "LICENCES" / "licences.yaml"
 

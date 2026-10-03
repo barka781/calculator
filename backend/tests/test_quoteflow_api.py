@@ -340,6 +340,9 @@ def test_run_falls_back_to_local_yaml_on_api_error(monkeypatch):
             yield {"sku": "L1"}
 
     monkeypatch.setattr(ingest, "LocalYamlProvider", FakeLocal)
+    # Mécanisme de repli seul : les compléments CATALOGS_LOCAL sont couverts par
+    # test_catalog_local.py et ne doivent pas fausser le comptage ici.
+    monkeypatch.setattr(ingest, "with_local_products", list)
     monkeypatch.setattr(ingest, "init_db", lambda: None)
     monkeypatch.setattr(ingest, "_upsert", lambda session, model, rows, batch_size=1000: len(rows))
 
@@ -377,6 +380,9 @@ def test_run_falls_back_when_provider_construction_fails(monkeypatch):
             yield {"sku": "L1"}
 
     monkeypatch.setattr(ingest, "LocalYamlProvider", FakeLocal)
+    # Mécanisme de repli seul : les compléments CATALOGS_LOCAL sont couverts par
+    # test_catalog_local.py et ne doivent pas fausser le comptage ici.
+    monkeypatch.setattr(ingest, "with_local_products", list)
     monkeypatch.setattr(ingest, "init_db", lambda: None)
     monkeypatch.setattr(ingest, "_upsert", lambda session, model, rows, batch_size=1000: len(rows))
 
