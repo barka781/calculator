@@ -1,13 +1,17 @@
-# Stack complet du Cloud Temple Calculator : frontend → backend → database.
+# Stack complet du Cloud Temple Calculator, sur le modèle du Cloud-Temple/starter-kit :
 #
+#   Internet → waf (Caddy + Coraza, seul port publié) → frontend (nginx)
+#            → backend (FastAPI) → database (PostgreSQL)
+#
+#   cp .env.example .env   # puis renseigner les secrets
 #   docker compose up -d --build
-#   → application accessible sur http://localhost:8088
+#   → application accessible sur http://localhost:8088 (WAF_PORT)
 #
-# Pour une VM derrière un reverse proxy : n'exposer que le service `frontend` (8088).
+# Seul le service `waf` publie un port. Les autres ne sont joignables que sur
+# le réseau interne du compose. Déploiement : voir README.md, section « Déploiement ».
 services:
   database:
     image: postgres:16-alpine
-    container_name: calculator-database
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${CALCULATOR_POSTGRES_USER:-calculator}
@@ -25,7 +29,6 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    container_name: calculator-backend
     restart: unless-stopped
     environment:
       # Host = nom du service database sur le réseau compose.
@@ -58,14 +61,39 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
-    container_name: calculator-frontend
     restart: unless-stopped
-    ports:
-      # 8088 côté hôte (8080 est souvent déjà pris). Adapter au besoin.
-      - "8088:8080"
+    # Pas de port publié : joint uniquement par le WAF (réseau interne).
+    expose:
+      - "8080"
     depends_on:
       backend:
         condition: service_healthy
 
+  # WAF — Caddy + Coraza OWASP CRS + rate limiting (repris du starter-kit).
+  # Seule porte d'entrée publique. Production TLS directe : SITE_ADDRESS=<domaine>
+  # dans .env et publier 80/443 (cf. README, « Déploiement »).
+  waf:
+    build: ./waf
+    restart: unless-stopped
+    ports:
+      - "${WAF_PORT:-8088}:8082"
+    volumes:
+      - ./waf/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:8082}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1/32}
+    healthcheck:
+      # Sonde interne du WAF (port 8081, non publié) : WAF → nginx → backend.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      frontend:
+        condition: service_healthy
+
 volumes:
   calculator_pgdata:
+  caddy-data:

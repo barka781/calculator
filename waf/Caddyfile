@@ -1,0 +1,167 @@
+# =============================================================================
+# WAF du Cloud Temple Calculator — Caddy + Coraza (OWASP CRS) + rate limiting
+# =============================================================================
+#
+# Adapté du Cloud-Temple/starter-kit (boilerplate/waf/Caddyfile). Différences :
+# - pas de route /mcp (le calculator n'est pas un serveur MCP) ;
+# - une seule cible : le service `frontend` (nginx), qui sert la SPA et relaie
+#   /api et /health vers le backend sur le réseau interne ;
+# - API publique en LISTE BLANCHE : seules les routes appelées par l'interface
+#   passent, tout le reste de /api répond 404 (synchro, calculs non exposés…) ;
+# - les en-têtes de sécurité sont posés ICI et nulle part ailleurs (nginx ne
+#   les pose plus, pour éviter deux politiques concurrentes).
+#
+# MODES (variable SITE_ADDRESS du .env) :
+#   1. Local / derrière un reverse proxy TLS amont : SITE_ADDRESS=:8082 (HTTP).
+#   2. Production TLS directe : SITE_ADDRESS=calculator.cloud-temple.app et
+#      publier les ports 80 + 443 du service waf ; Caddy gère Let's Encrypt.
+# =============================================================================
+{
+	# Ordre : rate_limit → WAF → routage
+	order rate_limit first
+	order coraza_waf after rate_limit
+
+	# Pas d'API d'administration Caddy
+	admin off
+
+	# IP réelle du client derrière un reverse proxy amont. Caddy ne lit
+	# X-Forwarded-For que si la connexion vient d'un proxy listé ici, et prend
+	# l'adresse la plus à droite non fiable (mode strict, anti-usurpation).
+	# Par défaut : personne n'est de confiance (TLS direct, local).
+	servers {
+		trusted_proxies static {$TRUSTED_PROXIES:127.0.0.1/32}
+		trusted_proxies_strict
+	}
+}
+
+{$SITE_ADDRESS::8082} {
+	# =========================================================================
+	# En-têtes de sécurité (toutes les réponses)
+	# =========================================================================
+	header {
+		# Politique identique à celle que nginx posait auparavant : la SPA est
+		# 100 % self (aucun CDN, aucun script inline).
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; upgrade-insecure-requests"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		# Pas de « preload » : l'inscription à la liste de préchargement des
+		# navigateurs engage tout le domaine, décision hors de ce projet.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+		-X-Powered-By
+	}
+
+	# =========================================================================
+	# Rate limiting par IP (avant le WAF)
+	# =========================================================================
+	# Un chargement de page = ~15 requêtes (SPA, catalogue, licences paginées).
+	# Les recalculs de devis sont déjà temporisés côté client.
+	rate_limit {
+		# Export PDF/Excel/HTML : génération coûteuse côté serveur.
+		zone export {
+			match {
+				path /api/quote/export
+			}
+			key {client_ip}
+			events 10
+			window 1m
+		}
+		zone api {
+			match {
+				path /api/*
+			}
+			key {client_ip}
+			events 120
+			window 1m
+		}
+		zone global {
+			key {client_ip}
+			events 300
+			window 1m
+		}
+	}
+
+	# =========================================================================
+	# WAF Coraza + OWASP CRS (toutes les routes)
+	# =========================================================================
+	coraza_waf {
+		load_owasp_crs
+		directives `
+			# Variables CRS définies AVANT les Include : une SecAction dont l'ID
+			# existe déjà est ignorée (première occurrence gagne, leçon du kit).
+			# Application publique en lecture + POST JSON : aucun autre verbe.
+			SecAction "id:900200,phase:1,pass,nolog,setvar:'tx.allowed_methods=GET HEAD POST OPTIONS'"
+			SecAction "id:900220,phase:1,pass,nolog,setvar:'tx.allowed_request_content_type=|application/json|text/plain|'"
+			SecAction "id:900110,phase:1,pass,nolog,\
+				setvar:tx.inbound_anomaly_score_threshold=5,\
+				setvar:tx.outbound_anomaly_score_threshold=4"
+
+			Include @coraza.conf-recommended
+			Include @crs-setup.conf.example
+			Include @owasp_crs/*.conf
+
+			SecRuleEngine On
+
+			# Un devis est un petit JSON : 1 Mio suffit largement, au-delà on refuse.
+			SecRequestBodyLimit 1048576
+			SecRequestBodyNoFilesLimit 1048576
+			SecRequestBodyLimitAction Reject
+		`
+	}
+
+	# =========================================================================
+	# Routage : API publique en liste blanche
+	# =========================================================================
+	@api_read {
+		method GET HEAD
+		path /api/catalog /api/catalog/* /api/licenses /api/licenses/*
+	}
+	handle @api_read {
+		reverse_proxy frontend:8080
+	}
+
+	@api_quote {
+		method POST
+		path /api/quote /api/quote/export
+	}
+	handle @api_quote {
+		# Les exports sont générés à la volée : délai aligné sur nginx (180 s).
+		reverse_proxy frontend:8080 {
+			transport http {
+				read_timeout 180s
+				response_header_timeout 180s
+			}
+		}
+	}
+
+	# Tout le reste de l'API (synchro, architecture, infogérance…) : non public.
+	@api_other path /api /api/*
+	handle @api_other {
+		respond 404
+	}
+
+	# SPA, /health, /config.js, fichiers statiques
+	handle {
+		reverse_proxy frontend:8080
+	}
+
+	log {
+		output stdout
+		format json
+		level INFO
+	}
+}
+
+# Sonde de santé INTERNE (healthcheck Docker) : port 8081 jamais publié.
+# Indépendante de SITE_ADDRESS, elle fonctionne aussi en mode TLS direct, et
+# vérifie toute la chaîne WAF → nginx → backend.
+http://:8081 {
+	handle /health {
+		reverse_proxy frontend:8080
+	}
+	handle {
+		respond 404
+	}
+}

@@ -44,22 +44,66 @@ Le lanceur démarre :
 
 ## Déploiement (Docker)
 
-Le stack complet (Nginx → API FastAPI → PostgreSQL) se lance via Docker Compose :
+Le stack complet suit les conventions du
+[Cloud-Temple/starter-kit](https://github.com/Cloud-Temple/starter-kit) :
+un WAF Caddy + Coraza est la **seule porte d'entrée** publique.
 
-```bash
-export CALCULATOR_POSTGRES_PASSWORD='valeur-longue-a-remplacer'
-docker compose up -d --build
+```text
+Internet → waf (Caddy + Coraza OWASP CRS, rate limiting) → frontend (Nginx)
+         → backend (FastAPI) → database (PostgreSQL)
 ```
 
-Docker Compose lit aussi automatiquement un fichier `.env` local (ignoré par git).
-Un modèle non secret est fourni dans `.env.example`.
+### Procédure (agent ou administrateur de déploiement)
 
-L'application est alors servie sur `http://localhost:8088` (port côté hôte
-configurable dans `docker-compose.yml`, service `frontend`).
+```bash
+git clone https://github.com/barka781/calculator.git && cd calculator
+cp .env.example .env
+# Renseigner au minimum CALCULATOR_POSTGRES_PASSWORD (openssl rand -hex 32).
+# Déploiement public : garder CALCULATOR_VIEW_PARTNER=no et le barème vide.
+docker compose up -d --build --wait
+curl -fsS http://localhost:8088/health
+```
 
-Architecture (3 services) :
+`--wait` rend la main quand les quatre services sont `healthy`. Le
+healthcheck du WAF traverse toute la chaîne (WAF → Nginx → API → base).
 
-- **`frontend`** (Nginx non-root, port hôte `8088` → `8080`) : sert le frontend statique et relaie `/api/*`
+### Exposition et TLS
+
+Seul le service `waf` publie un port (`WAF_PORT`, défaut `8088`). Deux modes,
+réglés par `SITE_ADDRESS` dans `.env` :
+
+- **Derrière un reverse proxy TLS amont** (ou en local) : `SITE_ADDRESS=:8082`
+  (défaut). Le proxy amont pointe sur `http://<hôte>:8088`.
+  Déclarer alors l'adresse du proxy dans `TRUSTED_PROXIES`, sinon toutes les
+  requêtes semblent venir du proxy et le rate limiting par IP devient commun à
+  tous les visiteurs.
+- **TLS direct** : `SITE_ADDRESS=calculator.cloud-temple.app` (DNS pointé sur
+  l'hôte), puis lancer avec la surcouche qui publie les ports 80 et 443 :
+
+  ```bash
+  docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build --wait
+  ```
+
+  Caddy obtient et renouvelle le certificat Let's Encrypt.
+
+### Ce que le WAF laisse passer
+
+L'API publique est une **liste blanche** des routes utilisées par l'interface :
+`GET /api/catalog*`, `GET /api/licenses*`, `POST /api/quote`,
+`POST /api/quote/export`, plus `/health` et les fichiers statiques. Toute autre
+route `/api` (synchro, architecture, infogérance, appliances) répond `404`
+depuis l'extérieur ; nginx refuse en plus `/api/sync/` (défense en profondeur,
+cette route n'a pas d'authentification). Le WAF bloque aussi les attaques OWASP courantes (`403`),
+les corps de requête de plus de 1 Mio (`413`) et limite le débit par IP
+(`429`) : 300 req/min au total, 120 sur l'API, 10 exports par minute.
+
+Les en-têtes de sécurité (CSP, HSTS, X-Frame-Options…) sont posés par le WAF
+uniquement (`waf/Caddyfile`). `waf/Dockerfile` est repris tel quel du
+starter-kit : le resynchroniser depuis le kit plutôt que de le modifier.
+
+### Services internes
+
+- **`frontend`** (Nginx non-root) : sert le frontend statique et relaie `/api/*`
   et `/health` vers l'API. Tout passe par une seule origine → ni CORS, ni URL
   d'API à configurer côté navigateur (`config.js` est résolu à `window.location.origin`).
 - **`backend`** (FastAPI non-root) : l'API. Au démarrage, attend PostgreSQL puis ingère les
@@ -67,18 +111,14 @@ Architecture (3 services) :
   injoignable, l'API se replie automatiquement sur les YAML (disponibilité d'abord).
   La synchronisation QuoteFlow est lancée au démarrage puis relancée toutes les
   15 minutes par défaut (`CALCULATOR_SYNC_POLL_INTERVAL_SECONDS=900`).
-- **`database`** (PostgreSQL 16 Alpine) : la base, données persistées dans le volume `calculator_pgdata`.
-  Aucun port PostgreSQL n'est publié sur l'hôte.
+- **`database`** (PostgreSQL 16 Alpine) : données persistées dans le volume `calculator_pgdata`.
 
-Pour une VM derrière un reverse proxy : n'exposer publiquement que le service
-`frontend` (mapper `8088:8080` ou pointer le proxy dessus) ; `backend` et
-`database` restent sur le réseau interne du compose.
-
-Arrêt / logs :
+### Exploitation
 
 ```bash
-docker compose logs -f          # suivre les journaux
-docker compose down             # arrêter (volume conservé)
+docker compose logs -f waf      # journaux du WAF (JSON), dont les blocages
+docker compose logs -f          # tous les journaux
+docker compose down             # arrêter (volumes conservés)
 docker compose down -v          # arrêter et supprimer les données
 ```
 
@@ -98,7 +138,8 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8001
 ```
 
-Endpoints principaux :
+Endpoints principaux (en direct sur le backend ; derrière le WAF, seuls
+catalogue, licences, devis, export et `/health` sont publics) :
 
 - `GET /health`
 - `GET /api/catalog`
@@ -118,6 +159,13 @@ Le schéma JSON détaillé des endpoints est documenté dans
 ## Tests
 
 ```bash
-cd backend
-python -m pytest
+# Backend (calcul, catalogue, synchro, exports)
+cd backend && python -m pytest
+
+# Frontend (logique de devis, données hors ligne)
+npm run test:frontend
+
+# Bout en bout, sur la stack Docker démarrée (WAF, liste blanche, attaques,
+# exposition réseau, rate limiting). Ignorés sans CALCULATOR_E2E_URL.
+CALCULATOR_E2E_URL=http://localhost:8088 backend/.venv/bin/python -m pytest tests/e2e -v
 ```

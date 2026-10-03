@@ -1,0 +1,12 @@
+# Surcouche « TLS direct » : Caddy sert HTTPS lui-même (Let's Encrypt).
+#
+#   SITE_ADDRESS=calculator.cloud-temple.app   # dans .env, DNS pointé sur l'hôte
+#   docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build --wait
+#
+# Remplace les ports du WAF par 80 (défi ACME + redirection HTTPS) et 443.
+# `!override` nécessite Docker Compose 2.24.4 ou plus récent.
+services:
+  waf:
+    ports: !override
+      - "80:80"
+      - "443:443"
