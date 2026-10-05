@@ -2127,6 +2127,11 @@ body.modal-open {
   .layout {
     grid-template-columns: 1fr;
   }
+  /* Sans cela, la largeur minimale du contenu du résumé (≈ 430 px) élargissait
+     toute la grille sur téléphone : page plus large que l'écran. */
+  #summary-slot {
+    min-width: 0;
+  }
   /* La sidebar devient une barre horizontale défilante. */
   .sidebar {
     position: static;
@@ -2227,9 +2232,6 @@ body.modal-open {
   gap: 18px;
   max-width: 1080px;
 }
-.est__hero {
-  padding: 4px 0 2px;
-}
 .est__title {
   margin: 0 0 6px;
   font-size: 26px;
@@ -2237,12 +2239,6 @@ body.modal-open {
   font-weight: 800;
   letter-spacing: -0.025em;
   text-wrap: balance;
-}
-.est__lede {
-  margin: 0;
-  max-width: 68ch;
-  color: var(--muted);
-  font-size: 14.5px;
 }
 .est__step,
 .est__results {
@@ -2264,18 +2260,6 @@ body.modal-open {
   font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.01em;
-}
-.est__num {
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--green-bright);
-  color: var(--on-green);
-  font-size: 12.5px;
-  font-weight: 800;
-  flex-shrink: 0;
 }
 .est__help {
   margin: -6px 0 12px;
@@ -2710,6 +2694,448 @@ body.modal-open {
   .opt__switch,
   .opt__switch::after,
   .offer__toggle svg {
+    transition: none;
+  }
+}
+
+/* ---------- Parcours guidé (assistant plein écran, modes guidé / libre) ----------
+   Première visite : un assistant recouvre l'app sur fond blanc. Ensuite, on arrive
+   directement dans l'app ; l'écran de résultat montre le prix d'abord et signale
+   chaque écart. Allègement visuel : graisses moyennes, boutons « Choisir » en contour. */
+.mode-switch button {
+  min-width: 0;
+  padding: 5px 12px;
+  font-weight: 600;
+}
+
+body.guide-open {
+  overflow: hidden;
+}
+.guide {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--surface);
+  animation: guide-in 0.3s ease both;
+}
+.guide[hidden] {
+  display: none;
+}
+.guide__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 22px;
+  border-bottom: 1px solid var(--border);
+}
+.guide__skip {
+  font-size: 13px;
+}
+.gsteps {
+  list-style: none;
+  margin: 0;
+  padding: 24px 16px 4px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+.gsteps__item {
+  display: flex;
+  align-items: center;
+}
+.gsteps__item + .gsteps__item::before {
+  content: "";
+  width: 40px;
+  height: 2px;
+  margin: 0 6px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  transition: background 0.3s;
+}
+.gsteps__item.is-done + .gsteps__item::before {
+  background: var(--green-bright);
+}
+.gsteps__node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--faint);
+}
+.gsteps__node:disabled {
+  cursor: default;
+}
+.gsteps__node[data-guide-goto] {
+  cursor: pointer;
+  color: var(--ink);
+}
+.gsteps__node[data-guide-goto]:hover .gsteps__label {
+  text-decoration: underline;
+}
+.is-current .gsteps__node {
+  color: var(--ink);
+  font-weight: 600;
+}
+.gsteps__num {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 0.25s, border-color 0.25s, color 0.25s;
+}
+.is-current .gsteps__num {
+  border-color: var(--green-bright);
+  color: var(--green-bright);
+}
+.is-done .gsteps__num {
+  border-color: var(--green-bright);
+  background: var(--green-bright);
+  color: var(--on-green);
+}
+.guide__stage {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 20px 16px 56px;
+}
+.guide__card {
+  width: 100%;
+  max-width: 640px;
+  padding: 28px 32px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 10px 40px -16px rgba(15, 23, 42, 0.18);
+  animation: guide-card 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.guide__card--wide {
+  max-width: 780px;
+}
+.guide__eyebrow {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--green-bright);
+}
+.guide__title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  outline: none;
+}
+.guide__lede {
+  margin: 0 0 20px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.guide .usage {
+  background: var(--surface);
+}
+.guide .usage__label {
+  font-weight: 600;
+}
+.guide__modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.guide__mode {
+  min-height: 120px;
+  padding: 18px;
+  gap: 6px;
+}
+.guide__mode .usage__label {
+  font-size: 15px;
+}
+.guide__mode .usage__hint {
+  font-size: 13px;
+  line-height: 1.45;
+}
+.guide__opts {
+  grid-template-columns: 1fr;
+}
+.guide__foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+}
+.guide__foot .btn {
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.guide__foot .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.guide__reveal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 72px 16px;
+  text-align: center;
+  animation: guide-card 0.3s both;
+}
+.guide__reveal .guide__title {
+  font-size: 20px;
+}
+@keyframes guide-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes guide-card {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Écran de résultat : prix d'abord, en barre collante sous les onglets. */
+.est__bar {
+  position: sticky;
+  top: calc(var(--stick-top) + 8px);
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.est__bar .est__title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  outline: none;
+}
+.est__bar .est__title b {
+  padding: 0 4px;
+  border-radius: 6px;
+  color: var(--green-bright);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.est__per {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--faint);
+}
+.est__delta,
+.offer__delta {
+  align-self: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.offer__delta {
+  align-self: flex-start;
+}
+.est__delta.is-up,
+.offer__delta.is-up {
+  background: var(--warn-soft);
+  color: #8a3f06;
+}
+.est__delta.is-down,
+.offer__delta.is-down {
+  background: var(--green-soft);
+  color: var(--green-bright);
+}
+.est__bar.is-flash-a .est__title b,
+.offer__price.is-flash-a b {
+  animation: est-flash-a 1s ease;
+}
+.est__bar.is-flash-b .est__title b,
+.offer__price.is-flash-b b {
+  animation: est-flash-b 1s ease;
+}
+/* Deux animations identiques : alterner leur nom rejoue le flash à chaque modification. */
+@keyframes est-flash-a {
+  0% {
+    background: #fff1b8;
+  }
+  100% {
+    background: transparent;
+  }
+}
+@keyframes est-flash-b {
+  0% {
+    background: #fff1b8;
+  }
+  100% {
+    background: transparent;
+  }
+}
+.est__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.est-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.est-chip:hover {
+  border-color: var(--green);
+}
+.est-chip svg {
+  color: var(--faint);
+}
+.est__guide {
+  font-size: 13px;
+}
+.est__opts {
+  margin-top: 14px;
+}
+#est-done:empty {
+  display: none;
+}
+.est-done {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--green-line);
+  border-radius: var(--radius);
+  background: var(--green-soft);
+  outline: none;
+  animation: guide-card 0.3s both;
+}
+.est-done__ico {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--green-bright);
+}
+.est-done__text {
+  flex: 1 1 260px;
+  font-size: 13.5px;
+}
+.est-done__hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* Allègement des offres : titres et prix en graisse moyenne, CTA en contour. */
+.offer.is-best {
+  border-color: var(--green-line);
+  box-shadow: var(--shadow);
+}
+.offer__title {
+  font-weight: 600;
+}
+.offer__price b {
+  font-size: 22px;
+  font-weight: 600;
+}
+.offer__tag {
+  font-weight: 500;
+}
+.offer__tag--best {
+  border: 1px solid var(--green-line);
+  background: var(--green-soft);
+  color: var(--green-bright);
+}
+.offer__cta {
+  border-color: var(--green-line);
+  background: var(--surface);
+  color: var(--green-bright);
+  font-weight: 500;
+}
+.offer__cta:hover {
+  border-color: var(--green);
+  background: var(--green-soft);
+}
+.offer__cta--best {
+  background: var(--green-soft);
+}
+.offer__cta.is-done {
+  border-color: var(--green-line);
+  background: var(--green-soft);
+  color: var(--green-bright);
+  cursor: default;
+}
+
+@media (max-width: 560px) {
+  .guide__card {
+    padding: 22px 18px;
+  }
+  .gsteps__label {
+    display: none;
+  }
+  .gsteps__item + .gsteps__item::before {
+    width: 20px;
+  }
+  .est__bar .est__title {
+    font-size: 17px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guide,
+  .guide__card,
+  .guide__reveal,
+  .est-done,
+  .est__bar .est__title b,
+  .offer__price b {
+    animation: none !important;
+  }
+  .gsteps__num,
+  .gsteps__item + .gsteps__item::before {
     transition: none;
   }
 }

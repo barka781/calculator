@@ -128,6 +128,10 @@ const I = {
     '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
   licenses:
     '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H4z"/><path d="M4 20h16M9 16v4M15 16v4"/></svg>',
+  check:
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>',
+  edit:
+    '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
   bulb:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1h6c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/></svg>',
 };
@@ -1052,6 +1056,10 @@ function mount() {
         </div>
         <div class="topbar__spacer"></div>
         <div class="topbar__tools">
+          <div class="segmented mode-switch" role="group" aria-label="Mode de devis">
+            <button type="button" data-mode="guided" aria-pressed="false" title="Décrivez votre projet, nous comparons les offres">Guidé</button>
+            <button type="button" data-mode="free" aria-pressed="false" title="Composez votre devis depuis le catalogue">Libre</button>
+          </div>
           <button class="btn btn--ghost btn--sm" data-history-open title="Historique des devis enregistrés">${I.history} Historique</button>
           <button class="btn btn--ghost btn--icon" data-set-api title="Configurer l'URL de l'API">${I.gear}</button>
         </div>
@@ -1093,7 +1101,8 @@ function mount() {
       <footer class="sitefoot">
         <div id="sync-foot" class="sync"></div>
       </footer>
-    </div>`;
+    </div>
+    <div id="guide" class="guide" role="dialog" aria-modal="true" aria-labelledby="guide-title" hidden></div>`;
   renderQuoteControls();
   wireEvents();
   wireResizer();
@@ -1311,7 +1320,9 @@ function wireSummaryModal() {
   summaryModalWired = true;
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    if (isHistoryOpen()) {
+    if (state.guide.open) {
+      applyGuide({ type: "skip" });
+    } else if (isHistoryOpen()) {
       closeHistory();
     } else if (state.summaryMax) {
       state.summaryMax = false;
@@ -1556,6 +1567,7 @@ function navItem(f, q, cartByFam) {
 function renderMain() {
   const body = document.querySelector("#main-body");
   if (!body) return;
+  renderModeSwitch();
 
   if (state.loading) {
     body.innerHTML = `<div class="loading-block"><div class="spinner"></div>Chargement du catalogue…</div>`;
@@ -1576,7 +1588,10 @@ function renderMain() {
 
   const fam = FAMILIES.find((f) => f.id === state.activeFamily) || FAMILIES[0];
   if (fam.kind === "estimate") {
-    renderEstimateView(body);
+    // Assistant ouvert : il porte les champs de saisie ; la vue reste vide pour
+    // que les identifiants (#est-servers…) n'existent qu'une fois dans la page.
+    if (state.guide.open) body.innerHTML = "";
+    else renderEstimateView(body);
     return;
   }
   if (fam.kind === "licenses") {
@@ -2114,9 +2129,10 @@ function wireEvents() {
 }
 
 function onClick(e) {
-  const t = e.target.closest("[data-family-nav],[data-subfamily],[data-card-toggle],[data-card-line],[data-period],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close],[data-summary-size],[data-summary-toggle],[data-summary-close],[data-toggle-config],[data-toggle-totals],[data-history-open],[data-history-close],[data-history-save],[data-history-reopen],[data-history-delete],[data-est-usage],[data-est-size],[data-est-qty],[data-est-custom],[data-est-remove],[data-est-add],[data-est-class],[data-est-detail],[data-est-apply]");
+  const t = e.target.closest("[data-family-nav],[data-subfamily],[data-card-toggle],[data-card-line],[data-period],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close],[data-summary-size],[data-summary-toggle],[data-summary-close],[data-toggle-config],[data-toggle-totals],[data-history-open],[data-history-close],[data-history-save],[data-history-reopen],[data-history-delete],[data-est-usage],[data-est-size],[data-est-qty],[data-est-custom],[data-est-remove],[data-est-add],[data-est-class],[data-est-detail],[data-est-choose],[data-est-done-close],[data-mode],[data-guide-mode],[data-guide-next],[data-guide-back],[data-guide-skip],[data-guide-goto],[data-guide-open]");
   if (!t) return;
 
+  if (onGuideClick(t)) return;
   if (onEstimateClick(t)) return;
 
   // Historique des devis (snapshots locaux).
@@ -2173,6 +2189,7 @@ function onClick(e) {
   // Navigation par famille (sidebar) : quitte la recherche, réinitialise la sous-famille.
   if (t.dataset.familyNav) {
     state.activeFamily = t.dataset.familyNav;
+    setMode(state.activeFamily === "estimate" ? "guided" : "free");
     state.subfamily = "";
     state.openCards.clear();
     if (state.search) {
@@ -2578,7 +2595,10 @@ function persistEstimate() {
 
 state.est = loadEstimate();
 state.estDetail = new Set(); // propositions dont le détail est déplié
-state.estApplied = ""; // proposition tout juste ajoutée au devis (retour visuel)
+state.estPrev = null; // prix par offre au dernier affichage (calcul des écarts)
+state.estDeltas = {}; // écarts de prix affichés par offre
+state.estFlip = false; // alterne deux animations identiques pour rejouer le flash
+state.estChosen = null; // dernier devis créé depuis l'estimation (bandeau de confirmation)
 
 const estimateInput = () => ({
   servers: state.est.servers,
@@ -2589,8 +2609,8 @@ const estimateInput = () => ({
 
 const plural = (n, one, many) => `${num(n)} ${n > 1 ? many : one}`;
 
-function renderEstimateView(body) {
-  const usages = Sizing.USAGES.map((u) => {
+function usageGridHtml() {
+  return Sizing.USAGES.map((u) => {
     const on = state.est.usage === u.id;
     return `
       <button type="button" class="usage ${on ? "is-active" : ""}" data-est-usage="${u.id}" aria-pressed="${on}">
@@ -2598,43 +2618,54 @@ function renderEstimateView(body) {
         <span class="usage__hint">${esc(u.hint)}</span>
       </button>`;
   }).join("");
+}
 
+const serversRecap = (t) =>
+  t.vms ? `${plural(t.vms, "serveur", "serveurs")} · ${num(t.vcpu)} vCPU · ${num(t.ram)} Go de RAM · ${num(t.disk)} Go de disque` : "";
+
+const requirementsRecap = () =>
+  [state.est.ha ? "Haute disponibilité" : "Sans haute disponibilité", state.est.backup ? "Sauvegarde" : "Sans sauvegarde"].join(" · ");
+
+// Écran de résultat : le prix d'abord (barre collante), les offres, puis le
+// panneau « Ajuster ». Les pastilles rouvrent l'assistant sur l'étape concernée.
+function renderEstimateView(body) {
+  const chip = (step, id, text) =>
+    `<button type="button" class="est-chip" data-guide-open="${step}" data-from-result ${id ? `id="${id}"` : ""}><span>${esc(text)}</span>${I.edit}</button>`;
   body.innerHTML = `
     <div class="est">
-      <div class="est__hero">
-        <h1 class="est__title">Combien coûtera votre projet ?</h1>
-        <p class="est__lede">Décrivez vos serveurs : nous comparons pour vous trois façons de les héberger chez Cloud Temple, en France. Prix publics hors taxes, par mois, calculés en direct.</p>
+      <div class="est__bar" id="est-bar">
+        <h1 class="est__title" id="est-title" tabindex="-1">Votre estimation : à partir de <b id="est-best">—</b> <span class="est__per">HT / mois</span></h1>
+        <span class="est__delta" id="est-best-delta" hidden></span>
       </div>
+      <div class="est__chips">
+        ${chip(1, "", Sizing.usageById(state.est.usage).label)}
+        ${chip(2, "est-chip-servers", "")}
+        ${chip(3, "est-chip-reqs", "")}
+        <button type="button" class="linkish est__guide" data-guide-open="1">Me guider pas à pas</button>
+      </div>
+      <div id="est-done">${estDoneHtml()}</div>
 
-      <section class="est__step" aria-labelledby="est-s1">
-        <h2 class="est__h" id="est-s1"><span class="est__num" aria-hidden="true">1</span>Votre projet</h2>
-        <p class="est__help">Choisissez le cas le plus proche : nous préremplissons vos serveurs, vous ajustez ensuite.</p>
-        <div class="usage-grid" role="group" aria-label="Type de projet">${usages}</div>
+      <section class="est__results" aria-labelledby="est-s4">
+        <h2 class="est__h" id="est-s4">Nos propositions</h2>
+        <p class="est__help">Trois façons d'héberger votre projet chez Cloud Temple, en France. Prix publics hors taxes, recalculés à chaque modification.</p>
+        <div class="offer-grid" id="est-offers"></div>
+        ${estHypothesesHtml()}
       </section>
 
-      <section class="est__step" aria-labelledby="est-s2">
-        <h2 class="est__h" id="est-s2"><span class="est__num" aria-hidden="true">2</span>Vos serveurs</h2>
+      <section class="est__step" aria-labelledby="est-adj">
+        <h2 class="est__h" id="est-adj">Ajuster votre projet</h2>
         <div class="srv-list" id="est-servers">${estServersHtml()}</div>
         <div class="est__row">
           <button type="button" class="btn btn--ghost btn--sm" data-est-add>${I.plus} Ajouter un serveur</button>
           <span class="est__totals" id="est-totals"></span>
         </div>
-      </section>
-
-      <section class="est__step" aria-labelledby="est-s3">
-        <h2 class="est__h" id="est-s3"><span class="est__num" aria-hidden="true">3</span>Vos exigences</h2>
-        <div class="opt-list">
+        <div class="opt-list est__opts">
           ${optSwitch("ha", "Haute disponibilité", "Vos services restent en ligne si un serveur tombe en panne : capacité de secours et deux zones de disponibilité.")}
           ${optSwitch("backup", "Sauvegarde quotidienne", "Copie de vos serveurs et de leurs données, incluse dans le prix des serveurs dédiés. Pour les VM mutualisées, nos équipes la chiffrent avec vous.")}
         </div>
       </section>
-
-      <section class="est__results" aria-labelledby="est-s4">
-        <h2 class="est__h" id="est-s4">Nos propositions</h2>
-        <div class="offer-grid" id="est-offers"></div>
-        ${estHypothesesHtml()}
-      </section>
     </div>`;
+  state.estDeltas = {}; // pas de badge hérité d'une visite précédente de la vue
   renderEstimateLive();
 }
 
@@ -2654,7 +2685,7 @@ function serverSpecs(s) {
 
 function estServersHtml() {
   if (!state.est.servers.length) {
-    return `<div class="srv-empty">Aucun serveur pour l'instant. Ajoutez-en un, ou choisissez un type de projet ci-dessus.</div>`;
+    return `<div class="srv-empty">Aucun serveur pour l'instant : ajoutez-en un.</div>`;
   }
   return state.est.servers
     .map((s, i) => {
@@ -2708,21 +2739,62 @@ function estHypothesesHtml() {
     </details>`;
 }
 
-// Re-rendu léger : totaux et propositions (les champs de saisie restent en place).
+// Re-rendu léger : totaux, pastilles et propositions (les champs de saisie
+// restent en place). Les écarts de prix ne sont calculés que lorsque les offres
+// sont affichées : une modification faite dans l'assistant apparaît donc en
+// écart au retour sur le résultat.
+let announceTimer = null;
 function renderEstimateLive() {
-  const totalsEl = document.querySelector("#est-totals");
-  const offersEl = document.querySelector("#est-offers");
-  if (!totalsEl || !offersEl) return;
-
   const results = Sizing.estimateAll(estimateInput(), state.catalog);
   const t = results[0].totals;
-  totalsEl.textContent = t.vms
-    ? `${plural(t.vms, "serveur", "serveurs")} · ${num(t.vcpu)} vCPU · ${num(t.ram)} Go de RAM · ${num(t.disk)} Go de disque`
-    : "";
+  const recap = serversRecap(t);
+  const totalsEl = document.querySelector("#est-totals");
+  if (totalsEl) totalsEl.textContent = recap;
+  const guideRecap = document.querySelector("#guide-recap");
+  if (guideRecap) guideRecap.textContent = recap || "Aucun serveur";
+  const next = document.querySelector("[data-guide-next]");
+  if (next && state.guide.step === 2) next.disabled = !t.vms;
+
+  const offersEl = document.querySelector("#est-offers");
+  if (!offersEl) return;
+  const chipServers = document.querySelector("#est-chip-servers span");
+  if (chipServers) chipServers.textContent = recap || "Aucun serveur";
+  const chipReqs = document.querySelector("#est-chip-reqs span");
+  if (chipReqs) chipReqs.textContent = requirementsRecap();
+
+  const current = Guide.monthlyByOffer(results);
+  const deltas = Guide.priceDeltas(state.estPrev, current);
+  const changed = Object.keys(deltas).length > 0;
+  const prevBest = state.estPrev ? Math.min(...Object.values(state.estPrev)) : Infinity;
+  if (changed) {
+    state.estDeltas = deltas;
+    state.estFlip = !state.estFlip;
+  }
+  state.estPrev = current;
 
   const priced = results.filter((r) => r.ok && !r.missing.length);
   const cheapest = priced.length ? priced.reduce((a, b) => (b.monthly < a.monthly ? b : a)) : null;
-  offersEl.innerHTML = results.map((r) => offerCardHtml(r, cheapest)).join("");
+  offersEl.innerHTML = results.map((r) => offerCardHtml(r, cheapest, changed)).join("");
+
+  const best = document.querySelector("#est-best");
+  if (best) best.textContent = cheapest ? money(cheapest.monthly) : "—";
+  const bestDelta = document.querySelector("#est-best-delta");
+  const bar = document.querySelector("#est-bar");
+  if (changed && bestDelta && cheapest && Number.isFinite(prevBest)) {
+    const d = Math.round((cheapest.monthly - prevBest) * 100) / 100;
+    bestDelta.hidden = d === 0;
+    bestDelta.className = `est__delta ${d > 0 ? "is-up" : "is-down"}`;
+    bestDelta.textContent = `${d > 0 ? "+" : "−"}${money(Math.abs(d))} / mois`;
+  }
+  if (changed && bar) {
+    bar.classList.remove("is-flash-a", "is-flash-b");
+    bar.classList.add(state.estFlip ? "is-flash-a" : "is-flash-b");
+  }
+  // Lecteurs d'écran : une annonce par série de modifications, pas à chaque chiffre tapé.
+  if (changed && cheapest) {
+    window.clearTimeout(announceTimer);
+    announceTimer = window.setTimeout(() => announce(`Nouvelle estimation : à partir de ${money(cheapest.monthly)} hors taxes par mois`), 900);
+  }
 }
 
 // Statut SecNumCloud lu dans le catalogue, sur le produit serveur retenu (lame
@@ -2733,12 +2805,13 @@ function offerQualification(r) {
   return item ? item.snc : "";
 }
 
-function offerCardHtml(r, cheapest) {
+function offerCardHtml(r, cheapest, changed) {
   const o = r.offer;
+  const isBest = !!cheapest && cheapest.offer.id === o.id;
   const snc = offerQualification(r);
   const qualified = snc === "yes";
   const badges = [
-    cheapest && cheapest.offer.id === o.id ? `<span class="offer__tag offer__tag--best">Le plus économique</span>` : "",
+    isBest ? `<span class="offer__tag offer__tag--best">Le plus économique</span>` : "",
     qualified ? `<span class="offer__tag offer__tag--sens">Pour les données sensibles</span>` : "",
   ].join("");
   const qual = qualified
@@ -2758,7 +2831,12 @@ function offerCardHtml(r, cheapest) {
     body = `<p class="offer__msg">Tarif momentanément indisponible : le catalogue n'a pas pu être chargé.</p>`;
   } else {
     const open = state.estDetail.has(o.id);
-    const applied = state.estApplied === o.id;
+    const chosen = !!state.estChosen && state.estChosen.offerId === o.id && state.estChosen.sig === estimateSig();
+    const d = state.estDeltas[o.id];
+    const flash = changed && d ? (state.estFlip ? "is-flash-a" : "is-flash-b") : "";
+    const delta = d
+      ? `<span class="offer__delta ${d > 0 ? "is-up" : "is-down"}">${d > 0 ? "+" : "−"}${money(Math.abs(d))} / mois</span>`
+      : "";
     const what =
       o.id === "vmi"
         ? `<div class="segmented offer__class" role="group" aria-label="Classe de VM">${Sizing.VM_CLASSES.map(
@@ -2778,7 +2856,8 @@ function offerCardHtml(r, cheapest) {
       )
       .join("");
     body = `
-      <div class="offer__price"><b>${money(r.monthly)}</b><span>HT / mois</span></div>
+      <div class="offer__price ${flash}"><b>${money(r.monthly)}</b><span>HT / mois</span></div>
+      ${delta}
       <div class="offer__split">
         <span>Serveurs <b>${money(r.serversMonthly)}</b></span>
         <span title="Payé une fois pour tout votre environnement">Socle <b>${money(r.baseMonthly)}</b></span>
@@ -2786,13 +2865,13 @@ function offerCardHtml(r, cheapest) {
       ${what}
       <button type="button" class="linkish offer__toggle" data-est-detail="${o.id}" aria-expanded="${open}">${I.chevron} ${open ? "Masquer le détail" : "Voir le détail"}</button>
       ${open ? `<div class="offer__lines">${rows}</div>` : ""}
-      <button type="button" class="btn btn--primary offer__cta ${applied ? "is-done" : ""}" data-est-apply="${o.id}" ${applied ? 'aria-disabled="true"' : ""}>${
-        applied ? "Ajouté au devis ✓" : `${I.plus} Ajouter au devis`
+      <button type="button" class="btn offer__cta ${isBest ? "offer__cta--best" : ""} ${chosen ? "is-done" : ""}" data-est-choose="${o.id}" ${chosen ? 'aria-disabled="true"' : ""}>${
+        chosen ? `${I.check} Devis créé` : "Choisir cette offre"
       }</button>`;
   }
 
   return `
-    <article class="offer ${cheapest && cheapest.offer.id === o.id ? "is-best" : ""}">
+    <article class="offer ${isBest ? "is-best" : ""}">
       <div class="offer__tags">${badges}</div>
       <h3 class="offer__title">${esc(o.label)}</h3>
       <div class="offer__sub"><span>${esc(o.product)}</span>${qual}</div>
@@ -2801,32 +2880,57 @@ function offerCardHtml(r, cheapest) {
     </article>`;
 }
 
-function applyEstimate(offerId) {
+// Empreinte de la saisie : un second clic sur la même offre, sans rien changer,
+// ne crée pas un devis en double.
+const estimateSig = () => JSON.stringify(estimateInput());
+
+// « Choisir cette offre » : un choix = un devis. La cotation ouverte est remplie
+// si elle est vide, sinon une nouvelle cotation est créée et activée.
+function chooseOffer(offerId) {
   const r = Sizing.estimateOffer(offerId, estimateInput(), state.catalog);
   if (!r.ok || r.missing.length) return;
+  const sig = estimateSig();
+  if (state.estChosen && state.estChosen.offerId === offerId && state.estChosen.sig === sig) return;
+
+  const name = Guide.uniqueName(
+    Sizing.usageById(state.est.usage).label,
+    state.quotes.map((q, i) => quoteLabel(q, i))
+  );
+  if (Guide.chooseTarget(activeQuote()) === "new") {
+    const q = createQuote({ name, projectName: name }, state.quotes.length);
+    state.quotes.push(q);
+    state.activeQuoteId = q.id;
+    quoteReq += 1; // un chiffrage en vol pour l'ancienne cotation ne doit pas atterrir ici
+    window.clearTimeout(quoteTimer);
+  } else if (!state.projectName.trim()) {
+    state.projectName = name;
+  }
   r.lines.forEach((l) => {
     const meta = state.catalog.find((p) => p.sku === l.sku);
-    if (!meta) return;
-    const existing = findLine(l.sku, "catalog");
-    const current = existing ? existing.quantity : 0;
-    // Le socle (tenant, zones) se paie une fois par environnement : on garde la
-    // plus grande quantité au lieu de l'additionner. Les serveurs, eux, s'ajoutent
-    // à ceux déjà présents dans le devis. Le support est recalculé juste après.
-    upsertLine(meta, l.group === "base" ? Math.max(current, l.quantity) : current + l.quantity);
+    if (meta) upsertLine(meta, l.quantity);
   });
   resizeSupportLine();
-  if (!state.projectName.trim()) {
-    state.projectName = Sizing.usageById(state.est.usage).label;
-    persistQuotes();
-  }
-  state.estApplied = offerId;
-  announce(`${r.offer.label} ajouté au devis : ${money(r.monthly)} hors taxes par mois`);
+  persistQuotes();
+  const idx = state.quotes.findIndex((q) => q.id === state.activeQuoteId);
+  state.estChosen = { offerId, sig, name: quoteLabel(activeQuote(), idx), label: r.offer.label, monthly: r.monthly };
+  announce(`Devis « ${state.estChosen.name} » créé avec l'offre ${r.offer.label} : ${money(r.monthly)} hors taxes par mois`);
   afterCartChange("catalog");
-  window.setTimeout(() => {
-    if (state.estApplied !== offerId) return;
-    state.estApplied = "";
-    renderEstimateLive();
-  }, 2500);
+  document.querySelector("#est-done .est-done")?.focus();
+}
+
+function estDoneHtml() {
+  const c = state.estChosen;
+  if (!c) return "";
+  return `
+    <div class="est-done" tabindex="-1">
+      <span class="est-done__ico" aria-hidden="true">${I.check}</span>
+      <div class="est-done__text">
+        <b>Devis « ${esc(c.name)} » créé</b> avec l'offre ${esc(c.label)}, ${esc(money(c.monthly))} HT / mois. Il s'affiche dans le panneau Devis.
+        <span class="est-done__hint">Pour un autre devis, ajustez votre projet puis choisissez de nouveau une offre.</span>
+      </div>
+      <button type="button" class="btn btn--ghost btn--sm" data-summary-toggle>Voir le devis</button>
+      <button type="button" class="modal__close" data-est-done-close aria-label="Masquer ce message">${I.close}</button>
+    </div>`;
 }
 
 // Support Standard = 5 % des ressources de TOUT le devis (500 € minimum) : après
@@ -2867,7 +2971,8 @@ function onEstimateClick(t) {
   if (t.dataset.estUsage) {
     state.est = { ...defaultEstimate(t.dataset.estUsage), ha: state.est.ha, backup: state.est.backup };
     persistEstimate();
-    renderMain();
+    if (state.guide.open) renderGuide(`[data-est-usage="${t.dataset.estUsage}"]`);
+    else renderMain();
     document.querySelector(`[data-est-usage="${t.dataset.estUsage}"]`)?.focus();
     return true;
   }
@@ -2915,11 +3020,16 @@ function onEstimateClick(t) {
     document.querySelector(`[data-est-detail="${id}"]`)?.focus();
     return true;
   }
-  if (t.dataset.estApply) {
-    // Déjà ajouté à l'instant : un second clic ne double pas les serveurs.
-    if (state.estApplied === t.dataset.estApply) return true;
-    applyEstimate(t.dataset.estApply);
-    document.querySelector(`[data-est-apply="${t.dataset.estApply}"]`)?.focus();
+  if (t.dataset.estChoose) {
+    chooseOffer(t.dataset.estChoose);
+    return true;
+  }
+  if (t.hasAttribute("data-est-done-close")) {
+    state.estChosen = null;
+    const done = document.querySelector("#est-done");
+    if (done) done.innerHTML = "";
+    renderEstimateLive();
+    document.querySelector("#est-title")?.focus();
     return true;
   }
   return false;
@@ -2949,8 +3059,228 @@ function onEstimateInput(el) {
   renderEstimateLive();
 }
 
+/* ---------- Parcours guidé : assistant de première visite, modes guidé / libre ----------
+   Règles (transitions, préférences, choix du devis) : guide.js, module pur testé.
+   Ici, seulement le rendu et le câblage. L'assistant plein écran recouvre l'app
+   (rendue inerte) ; il porte les champs de l'estimation pendant qu'il est ouvert. */
+const Guide = window.CalculatorGuide;
+const FREE_FAMILY = "compute"; // vue d'arrivée du devis libre
+const GUIDE_STEPS = ["Votre projet", "Vos serveurs", "Vos exigences", "Estimation"];
+const guidePrefs = Guide.readPrefs(localStorage);
+state.mode = guidePrefs.mode;
+state.guide = Guide.initialGuide(guidePrefs);
+if (guidePrefs.onboarded && guidePrefs.mode === "free") state.activeFamily = FREE_FAMILY;
+let revealTimer = null;
+
+function setMode(mode) {
+  state.mode = mode === "free" ? "free" : "guided";
+  Guide.savePrefs(localStorage, { mode: state.mode });
+}
+
+// Bascule guidé / libre : quitte la recherche et ouvre la vue d'arrivée du mode.
+function goMode(mode) {
+  setMode(mode);
+  state.activeFamily = state.mode === "guided" ? "estimate" : FREE_FAMILY;
+  state.subfamily = "";
+  state.openCards.clear();
+  if (state.search) {
+    state.search = "";
+    state.lic.query = "";
+    state.lic.page = 1;
+    const input = document.querySelector("#q-global");
+    if (input) input.value = "";
+  }
+  renderSidebar();
+  renderMain();
+}
+
+function renderModeSwitch() {
+  const guided = !state.search.trim() && state.activeFamily === "estimate";
+  document.querySelectorAll("[data-mode]").forEach((b) => {
+    const on = (b.dataset.mode === "guided") === guided;
+    b.classList.toggle("is-active", on);
+    b.setAttribute("aria-pressed", String(on));
+  });
+}
+
+function applyGuide(action) {
+  const prev = state.guide;
+  const next = Guide.reduceGuide(prev, action);
+  if (next === prev) return;
+  state.guide = next;
+  window.clearTimeout(revealTimer);
+
+  if (prev.open && !next.open) {
+    Guide.savePrefs(localStorage, { onboarded: true });
+    renderGuide();
+    goMode(action.type === "pickFree" ? "free" : "guided");
+    document.querySelector(action.type === "pickFree" ? "#q-global" : "#est-title")?.focus();
+    return;
+  }
+  if (!prev.open) renderMain(); // la vue d'estimation cède ses champs à l'assistant
+  renderGuide();
+  if (next.step === Guide.REVEAL) {
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    revealTimer = window.setTimeout(() => applyGuide({ type: "revealDone" }), reduced ? 400 : 1200);
+  }
+}
+
+function guideStepsHtml(g) {
+  if (g.step === Guide.ENTRY) return "";
+  const items = GUIDE_STEPS.map((label, i) => {
+    const n = i + 1;
+    const done = n < g.step;
+    const current = n === g.step;
+    const reachable = done && n <= Guide.LAST_STEP && g.step <= Guide.LAST_STEP;
+    return `
+      <li class="gsteps__item ${done ? "is-done" : ""} ${current ? "is-current" : ""}">
+        <button type="button" class="gsteps__node" ${reachable ? `data-guide-goto="${n}"` : "disabled"} ${current ? 'aria-current="step"' : ""}>
+          <span class="gsteps__num" aria-hidden="true">${done ? I.check : n}</span>
+          <span class="gsteps__label">${esc(label)}</span>
+        </button>
+      </li>`;
+  }).join("");
+  return `<ol class="gsteps" aria-label="Étapes de l'estimation">${items}</ol>`;
+}
+
+function guideBodyHtml(g) {
+  const title = (text) => `<h1 class="guide__title" id="guide-title" tabindex="-1" data-guide-focus>${esc(text)}</h1>`;
+  const eyebrow = `<p class="guide__eyebrow">Étape ${g.step} sur ${Guide.LAST_STEP}</p>`;
+  const nextLabel = g.fromResult ? "Mettre à jour l'estimation" : g.step === Guide.LAST_STEP ? "Voir mon estimation" : "Continuer";
+  const foot = `
+    <div class="guide__foot">
+      <button type="button" class="btn btn--ghost" data-guide-back>← Retour</button>
+      <button type="button" class="btn btn--primary" data-guide-next>${esc(nextLabel)}</button>
+    </div>`;
+
+  if (g.step === Guide.ENTRY) {
+    return `
+      <div class="guide__card">
+        ${title("Comment voulez-vous construire votre devis ?")}
+        <p class="guide__lede">Vous pourrez changer de mode à tout moment, en haut de la page.</p>
+        <div class="guide__modes">
+          <button type="button" class="usage guide__mode" data-guide-mode="guided">
+            <span class="usage__label">Devis guidé</span>
+            <span class="usage__hint">Décrivez votre projet en 3 étapes : nous comparons pour vous les offres adaptées. Idéal si vous découvrez nos produits.</span>
+          </button>
+          <button type="button" class="usage guide__mode" data-guide-mode="free">
+            <span class="usage__label">Devis libre</span>
+            <span class="usage__hint">Choisissez directement les produits dans le catalogue. Idéal si vous savez ce qu'il vous faut.</span>
+          </button>
+        </div>
+      </div>`;
+  }
+  if (g.step === 1) {
+    return `
+      <div class="guide__card">
+        ${eyebrow}${title("Quel est votre projet ?")}
+        <p class="guide__lede">Choisissez le cas le plus proche : nous préremplissons vos serveurs, vous les ajusterez à l'étape suivante.</p>
+        <div class="usage-grid" role="group" aria-label="Type de projet">${usageGridHtml()}</div>
+        ${foot}
+      </div>`;
+  }
+  if (g.step === 2) {
+    return `
+      <div class="guide__card guide__card--wide">
+        ${eyebrow}${title("De quels serveurs avez-vous besoin ?")}
+        <p class="guide__lede">Une taille par serveur et le nombre d'exemplaires identiques. Pas sûr ? « Moyen » convient à la plupart des applications.</p>
+        <div class="srv-list" id="est-servers">${estServersHtml()}</div>
+        <div class="est__row">
+          <button type="button" class="btn btn--ghost btn--sm" data-est-add>${I.plus} Ajouter un serveur</button>
+          <span class="est__totals" id="est-totals"></span>
+        </div>
+        ${foot}
+      </div>`;
+  }
+  if (g.step === 3) {
+    return `
+      <div class="guide__card">
+        ${eyebrow}${title("Quelles sont vos exigences ?")}
+        <p class="guide__lede">Ces options changent le prix. Vous pourrez les modifier sur l'écran de résultat.</p>
+        <div class="opt-list guide__opts">
+          ${optSwitch("ha", "Haute disponibilité", "Vos services restent en ligne si un serveur tombe en panne : capacité de secours et deux zones de disponibilité.")}
+          ${optSwitch("backup", "Sauvegarde quotidienne", "Copie de vos serveurs et de leurs données. Pour les VM mutualisées, nos équipes la chiffrent avec vous.")}
+        </div>
+        ${foot}
+      </div>`;
+  }
+  return `
+    <div class="guide__reveal" role="status">
+      <div class="spinner" aria-hidden="true"></div>
+      ${title("Nous comparons 3 façons d'héberger votre projet")}
+      <p class="guide__lede" id="guide-recap"></p>
+    </div>`;
+}
+
+function renderGuide(focusSelector) {
+  const root = document.querySelector("#guide");
+  const shell = document.querySelector(".shell");
+  if (!root) return;
+  const g = state.guide;
+  if (!g.open) {
+    root.hidden = true;
+    root.innerHTML = "";
+    if (shell) shell.inert = false;
+    document.body.classList.remove("guide-open");
+    return;
+  }
+  root.hidden = false;
+  if (shell) shell.inert = true; // clavier et lecteurs d'écran restent dans l'assistant
+  document.body.classList.add("guide-open");
+  const skipLabel = g.fromResult || g.revealed ? "Fermer" : "Passer l'assistant";
+  root.innerHTML = `
+    <div class="guide__top">
+      <div class="brand">
+        <div class="brand__mark">${I.brand}</div>
+        <div class="brand__text">
+          <span class="brand__eyebrow">Cloud Temple</span>
+          <span class="brand__title">Calculateur d'offre Cloud</span>
+        </div>
+      </div>
+      ${g.step === Guide.REVEAL ? "" : `<button type="button" class="linkish guide__skip" data-guide-skip>${esc(skipLabel)}</button>`}
+    </div>
+    ${guideStepsHtml(g)}
+    <div class="guide__stage">${guideBodyHtml(g)}</div>`;
+  renderEstimateLive(); // totaux de l'étape 2, récapitulatif de la révélation
+  root.querySelector(focusSelector || "[data-guide-focus]")?.focus();
+}
+
+// Clics de l'assistant et du sélecteur de mode. Renvoie true si l'événement a été traité.
+function onGuideClick(t) {
+  if (t.dataset.mode) {
+    goMode(t.dataset.mode);
+    return true;
+  }
+  if (t.dataset.guideMode) {
+    applyGuide({ type: t.dataset.guideMode === "free" ? "pickFree" : "pickGuided" });
+    return true;
+  }
+  if (t.hasAttribute("data-guide-next")) {
+    applyGuide({ type: "next" });
+    return true;
+  }
+  if (t.hasAttribute("data-guide-back")) {
+    applyGuide({ type: "back" });
+    return true;
+  }
+  if (t.hasAttribute("data-guide-skip")) {
+    applyGuide({ type: "skip" });
+    return true;
+  }
+  if (t.dataset.guideGoto) {
+    applyGuide({ type: "goto", step: Number(t.dataset.guideGoto) });
+    return true;
+  }
+  if (t.dataset.guideOpen) {
+    applyGuide({ type: "open", step: Number(t.dataset.guideOpen), fromResult: t.hasAttribute("data-from-result") });
+    return true;
+  }
+  return false;
+}
+
 /* ---------- Boot ---------- */
 mount();
 render();
+renderGuide();
 loadAppVersion();
 loadAll();
