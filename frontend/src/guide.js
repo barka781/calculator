@@ -2,8 +2,9 @@
    - Première visite : un assistant plein écran (choix guidé / libre, 3 étapes,
      révélation) apprend le lien saisie → prix. Ensuite, on arrive directement
      dans l'app, dans le dernier mode utilisé ; l'assistant se relance à la demande.
-   - « Choisir cette offre » remplit le devis ouvert s'il est vide, sinon crée
-     une nouvelle cotation : un choix = un devis.
+   - Une cotation = un projet du client, avec sa propre estimation. « Choisir
+     cette offre » remplace le contenu de la cotation ; une garde demande
+     confirmation si ce contenu a été modifié à la main depuis le dernier choix.
    - Chaque modification affiche l'écart de prix par offre.
    Module pur (aucun DOM), testé par frontend/tests/guide.test.js. */
 (function exposeGuide(root) {
@@ -82,9 +83,20 @@
     }
   }
 
-  // Un choix = un devis : on réutilise la cotation ouverte seulement si elle est vide.
-  function chooseTarget(quote) {
-    return quote && Array.isArray(quote.cart) && quote.cart.length === 0 ? "reuse" : "new";
+  // Empreinte d'un panier : lignes (source, SKU, quantité) indépendamment de leur ordre.
+  function cartSignature(cart) {
+    return (Array.isArray(cart) ? cart : [])
+      .map((l) => `${l.source || "catalog"}:${l.sku}:${Math.round(Number(l.quantity) || 0)}`)
+      .sort()
+      .join("|");
+  }
+
+  // Garde avant de remplacer le contenu d'une cotation par une offre :
+  // - vide, ou identique au dernier choix (simple changement d'offre) : "replace" ;
+  // - modifiée à la main depuis (produit ajouté, quantité changée…) : "confirm".
+  function replaceGuard(cart, chosenSignature) {
+    if (!Array.isArray(cart) || cart.length === 0) return "replace";
+    return chosenSignature && cartSignature(cart) === chosenSignature ? "replace" : "confirm";
   }
 
   // Nom de cotation unique : « Application métier », puis « Application métier (2) »…
@@ -129,7 +141,8 @@
     savePrefs,
     initialGuide,
     reduceGuide,
-    chooseTarget,
+    cartSignature,
+    replaceGuard,
     uniqueName,
     monthlyByOffer,
     priceDeltas,

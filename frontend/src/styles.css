@@ -44,7 +44,7 @@
   --shadow-float: 0 12px 32px -10px rgba(15, 23, 42, 0.22), 0 4px 12px -6px rgba(15, 23, 42, 0.1);
   --summary-gap: 16px;
   /* Hauteur du pied de page fixe (toujours visible) — sert d'offset bas aux colonnes. */
-  --footer-h: 48px;
+  --footer-h: 0px; /* plus de pied de page : la version est au survol du logo */
   --mono: "SFMono-Regular", "JetBrains Mono", "Menlo", "Consolas", monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   /* Hauteurs des barres fixes (offsets des colonnes sticky). */
@@ -1414,32 +1414,9 @@ body.is-resizing {
 }
 .cart-line__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
-  width: 100%;
-  padding: 11px 12px;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  color: inherit;
-}
-.cart-line__head:hover {
-  background: var(--surface-2);
-}
-.cart-line__chevron {
-  color: var(--faint);
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  transition: transform 0.15s ease;
-}
-.cart-line__chevron svg {
-  width: 14px;
-  height: 14px;
-}
-.cart-line.is-open .cart-line__chevron {
-  transform: rotate(90deg);
-  color: var(--green-bright);
+  padding: 11px 12px 4px;
 }
 .cart-line__info {
   flex: 1;
@@ -1518,13 +1495,6 @@ body.is-resizing {
 }
 
 /* Corps replié : détail term-aware + contrôles quantité. */
-.cart-line__body {
-  display: none;
-  padding: 0 12px 12px;
-}
-.cart-line.is-open .cart-line__body {
-  display: block;
-}
 .cart-line__details {
   display: grid;
   grid-template-columns: 1fr;
@@ -1573,7 +1543,10 @@ body.is-resizing {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 10px;
+  padding: 4px 12px 10px;
+}
+.cart-line .cart-line__details {
+  margin: 0 12px 12px;
 }
 .cart-line__ctrl .stepper {
   border-color: var(--border);
@@ -1731,32 +1704,6 @@ body.is-resizing {
   color: var(--green-bright);
 }
 /* Bouton-chevron porté par le total principal : replie le détail financier. */
-.totals-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.totals-toggle__chev {
-  display: inline-grid;
-  place-items: center;
-  color: var(--faint);
-  transition: transform 0.2s ease;
-}
-.totals-toggle__chev svg {
-  width: 15px;
-  height: 15px;
-}
-.totals-toggle[aria-expanded="true"] .totals-toggle__chev {
-  transform: rotate(90deg);
-  color: var(--green-bright);
-}
 .totals-detail.is-collapsed {
   display: none;
 }
@@ -1877,38 +1824,6 @@ mark {
 }
 
 /* ---------- Pied de page : fraîcheur de la source ---------- */
-.sitefoot {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 25; /* au-dessus du contenu et de la carte résumé (15), sous la topbar (30) */
-  height: var(--footer-h);
-  display: flex;
-  align-items: center;
-  padding: 0 22px;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-}
-.sync {
-  flex: 1 1 auto;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-  justify-content: space-between;
-}
-.sync__version {
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--green-bright);
-  border: 1px solid var(--green-line);
-  background: var(--green-soft);
-  border-radius: 999px;
-  padding: 3px 8px;
-  white-space: nowrap;
-}
 
 /* ---------- Bouton « Enregistrer le devis » (panneau résumé) ---------- */
 .history-save-btn {
@@ -1954,6 +1869,9 @@ mark {
 .modal.is-open {
   opacity: 1;
   visibility: visible;
+  /* Visible dès l'ouverture (sinon le focus posé à l'ouverture échoue : l'élément
+     est encore « hidden » au début de la transition) ; le fondu reste à la fermeture. */
+  transition: opacity 0.2s ease, visibility 0s;
 }
 .modal__backdrop {
   position: absolute;
@@ -2108,13 +2026,6 @@ body.modal-open {
   .summary__lines {
     flex: none;
     max-height: 420px;
-  }
-  /* Pied de page : retour en flux normal (plus de carte flottante au-dessus). */
-  .sitefoot {
-    position: static;
-    height: auto;
-    display: block;
-    padding: 10px 22px;
   }
   .sidebar {
     height: calc(100vh - var(--stick-top));
@@ -3136,6 +3047,275 @@ body.guide-open {
   }
   .gsteps__num,
   .gsteps__item + .gsteps__item::before {
+    transition: none;
+  }
+}
+
+/* ---------- Retours de recette du 2026-10-05 ---------- */
+
+/* Version applicative : info-bulle au survol du logo (le pied de page a disparu). */
+.topbar .brand {
+  position: relative;
+}
+.topbar .brand[data-version]:not([data-version=""]):hover::after {
+  content: attr(data-version);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--navy);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Panier masquable : la colonne centrale récupère la place. */
+.summary__hide {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin-left: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: pointer;
+}
+.summary__hide:hover {
+  border-color: var(--green-line);
+  background: var(--green-soft);
+  color: var(--green-bright);
+}
+.summary__badge {
+  white-space: nowrap;
+}
+/* Seulement là où le panier occupe une colonne : en dessous, la grille mobile
+   (1 colonne) doit rester maîtresse, sinon la page déborde de l'écran. */
+@media (min-width: 1181px) {
+  body.summary-hidden .layout {
+    grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  }
+}
+body.summary-hidden #summary-slot {
+  display: none;
+}
+.summary-pill {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 40;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 1px solid var(--green-line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13.5px;
+  box-shadow: var(--shadow-float);
+  cursor: pointer;
+  animation: guide-card 0.25s both;
+}
+.summary-pill[hidden] {
+  display: none;
+}
+.summary-pill:hover {
+  background: var(--green-soft);
+}
+.summary-pill svg {
+  width: 17px;
+  height: 17px;
+  color: var(--green-bright);
+}
+.summary-pill b {
+  color: var(--green-bright);
+  font-variant-numeric: tabular-nums;
+}
+.summary-pill .per {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+/* Lignes du panier : le détail du prix se déplie par un bouton explicite. */
+.cart-line__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.cart-line__more:hover {
+  border-color: var(--green-line);
+  color: var(--green-bright);
+}
+.cart-line__more svg,
+.totals-more svg {
+  width: 13px;
+  height: 13px;
+  transform: rotate(90deg);
+  transition: transform 0.15s;
+}
+.cart-line__more[aria-expanded="true"] svg,
+.totals-more[aria-expanded="true"] svg {
+  transform: rotate(-90deg);
+}
+.cart-line__remove {
+  margin-left: auto;
+}
+.totals-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 6px 0 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--green-bright);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.totals-more:hover {
+  text-decoration: underline;
+}
+
+/* Fenêtre de confirmation (garde avant remplacement du devis). */
+.modal--confirm {
+  z-index: 120; /* au-dessus de l'assistant et des autres modales */
+}
+.modal--confirm .modal__dialog {
+  width: min(460px, 100%);
+}
+.confirm__body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+.btn--danger {
+  border-color: transparent;
+  background: #b91c1c; /* blanc sur #b91c1c : 6,5:1 (AA) */
+  color: #fff;
+}
+.btn--danger:hover {
+  background: #991b1b;
+  border-color: transparent;
+}
+
+/* Cartes d'offres alignées : chaque carte partage les rangées de la grille,
+   donc prix, boutons et détails sont à la même hauteur d'une carte à l'autre. */
+@supports (grid-template-rows: subgrid) {
+  .offer-grid {
+    row-gap: 14px;
+  }
+  .offer {
+    display: grid;
+    grid-template-rows: subgrid;
+    grid-row: span 9;
+    row-gap: 8px;
+    align-content: start;
+  }
+}
+.offer__slot:empty {
+  display: block; /* un emplacement vide garde sa rangée */
+}
+.offer__pricebox {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.offer__cta {
+  width: 100%;
+  margin-top: 0;
+}
+
+/* Mise en évidence : le prix est l'élément fort, le reste s'efface. */
+.est__results {
+  background: var(--surface);
+  border-color: var(--border);
+}
+.est__h-note {
+  margin-left: 6px;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--faint);
+}
+.offer__sub {
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.offer__hint {
+  font-size: 12px;
+  color: var(--faint);
+  line-height: 1.45;
+}
+.offer__price b {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.offer.is-best .offer__price b {
+  color: var(--green-bright);
+}
+.offer__split {
+  font-size: 12px;
+  color: var(--faint);
+}
+.offer__split b {
+  font-weight: 500;
+  color: var(--muted);
+}
+.total-row--main .val {
+  font-size: 26px;
+}
+
+/* Détails techniques en italique (vCPU, RAM, disque, lames, quantités). */
+.srv__specs > span,
+.est__totals,
+.offer__what,
+.offer__qty,
+.pc__desc,
+.spec-chip,
+.cart-line__meta > span:last-child {
+  font-style: italic;
+}
+
+@media (max-width: 1180px) {
+  .summary__hide {
+    margin-left: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .summary-pill {
+    animation: none;
+  }
+  .cart-line__more svg,
+  .totals-more svg {
     transition: none;
   }
 }

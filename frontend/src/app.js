@@ -128,6 +128,8 @@ const I = {
     '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
   licenses:
     '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H4z"/><path d="M4 20h16M9 16v4M15 16v4"/></svg>',
+  panelHide:
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16M8 10l2 2-2 2"/></svg>',
   check:
     '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>',
   edit:
@@ -156,7 +158,10 @@ function loadSummaryUi() {
 }
 function persistSummaryUi() {
   try {
-    localStorage.setItem(SUMMARY_UI_KEY, JSON.stringify({ cfg: state.cfgCollapsed, totals: state.totalsCollapsed }));
+    localStorage.setItem(
+      SUMMARY_UI_KEY,
+      JSON.stringify({ cfg: state.cfgCollapsed, totals: state.totalsCollapsed, hidden: state.summaryHidden })
+    );
   } catch {
     /* stockage indisponible : non bloquant */
   }
@@ -191,6 +196,7 @@ const state = {
   cfgCollapsed: _summaryUi.cfg === true, // bloc « nom + projection » replié
   totalsCollapsed: _summaryUi.totals === true, // détail financier replié
   summaryMax: false, // panier ouvert en grand (modale)
+  summaryHidden: _summaryUi.hidden === true, // panier masqué (pastille pour le rouvrir)
 };
 
 const app = document.querySelector("#app");
@@ -375,6 +381,10 @@ function createQuote(data = {}, index = 0) {
     quoteLoading: false,
     quoteError: "",
     quoteSource: data.quoteSource === "local" ? "local" : "live",
+    // Une cotation = un projet du client : elle porte sa propre estimation guidée.
+    est: data.est && typeof data.est === "object" ? data.est : null,
+    // Empreinte du panier juste après le dernier « Choisir cette offre » (garde de remplacement).
+    chosenSig: typeof data.chosenSig === "string" ? data.chosenSig : "",
   };
 }
 
@@ -425,6 +435,8 @@ function persistQuotes() {
         cart: q.cart,
         period: q.period,
         discount: q.discount,
+        est: q.est,
+        chosenSig: q.chosenSig,
       })),
     })
   );
@@ -450,6 +462,7 @@ function setActiveQuote(id) {
   state.activeQuoteId = id;
   quoteReq += 1;
   window.clearTimeout(quoteTimer);
+  resetEstimateUi();
   persistQuotes();
   render();
   if (state.cart.length && !state.quote) scheduleQuote();
@@ -472,6 +485,8 @@ function duplicateQuote() {
       cart: clone(source.cart),
       period: source.period,
       discount: source.discount,
+      est: source.est ? clone(source.est) : null,
+      chosenSig: source.chosenSig,
     },
     state.quotes.length
   );
@@ -534,7 +549,7 @@ async function loadAppVersion() {
   } catch {
     state.appVersion = "";
   }
-  renderSyncFoot();
+  renderVersion();
 }
 
 // Mémorise les données live fraîches (health + catalogue) pour le prochain
@@ -1056,6 +1071,8 @@ function mount() {
         </div>
         <div class="topbar__spacer"></div>
         <div class="topbar__tools">
+          <!-- TEMPORAIRE (recette) : rejouer la première visite. À retirer avant la mise en ligne. -->
+          <button class="btn btn--ghost btn--sm" type="button" data-guide-replay title="Temporaire : rejouer la première visite (accueil, 3 étapes, révélation)">Revoir l'accueil</button>
           <div class="segmented mode-switch" role="group" aria-label="Mode de devis">
             <button type="button" data-mode="guided" aria-pressed="false" title="Décrivez votre projet, nous comparons les offres">Guidé</button>
             <button type="button" data-mode="free" aria-pressed="false" title="Composez votre devis depuis le catalogue">Libre</button>
@@ -1086,6 +1103,21 @@ function mount() {
       </div>
 
       <div class="summary-backdrop" data-summary-close aria-hidden="true"></div>
+      <button type="button" class="summary-pill" id="summary-pill" data-summary-show hidden></button>
+
+      <div class="modal modal--confirm" id="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-body">
+        <div class="modal__backdrop" data-confirm="cancel"></div>
+        <div class="modal__dialog">
+          <div class="modal__head"><h2 id="confirm-title"></h2></div>
+          <div class="modal__body">
+            <p class="confirm__body" id="confirm-body"></p>
+            <div class="confirm__actions">
+              <button type="button" class="btn btn--ghost" data-confirm="cancel">Annuler</button>
+              <button type="button" class="btn btn--danger" data-confirm="ok">Confirmer</button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div class="modal" id="history-modal" role="dialog" aria-modal="true" aria-label="Historique des devis">
         <div class="modal__backdrop" data-history-close></div>
@@ -1098,9 +1130,6 @@ function mount() {
         </div>
       </div>
 
-      <footer class="sitefoot">
-        <div id="sync-foot" class="sync"></div>
-      </footer>
     </div>
     <div id="guide" class="guide" role="dialog" aria-modal="true" aria-labelledby="guide-title" hidden></div>`;
   renderQuoteControls();
@@ -1109,6 +1138,7 @@ function mount() {
   wireSummaryScroll();
   wireSummaryModal();
   applySummaryWidth(readSummaryWidth(), false); // restaure la largeur mémorisée
+  applySummaryHidden();
 }
 
 function quoteTabsHtml() {
@@ -1172,6 +1202,7 @@ function summarySkeleton() {
         <span class="summary__badge" id="count-badge">0 ligne</span>
         <button class="btn btn--danger-ghost btn--sm" data-clear hidden id="clear-btn">Vider</button>
         <div class="summary__sizes" role="group" aria-label="Largeur du panneau">${sizeBtns}</div>
+        <button class="summary__hide" type="button" data-summary-hide title="Masquer le panier : la page récupère la place" aria-label="Masquer le panier">${I.panelHide}</button>
       </div>
       <div class="summary__config ${state.cfgCollapsed ? "is-collapsed" : ""}">
         <button class="section-toggle" type="button" data-toggle-config aria-expanded="${state.cfgCollapsed ? "false" : "true"}" title="Replier / déplier la configuration"><span class="section-toggle__chev">${I.chevron}</span><span>Configuration</span></button>
@@ -1306,6 +1337,31 @@ function applySummaryMax() {
 }
 
 // Applique l'état replié du bloc « Configuration » (le bloc persiste, pas de re-render).
+// Panier masqué : la grille rend sa colonne, une pastille « Devis » le rouvre.
+function setSummaryHidden(hidden) {
+  state.summaryHidden = !!hidden;
+  if (hidden && state.summaryMax) {
+    state.summaryMax = false;
+    applySummaryMax();
+  }
+  persistSummaryUi();
+  applySummaryHidden();
+}
+function applySummaryHidden() {
+  document.body.classList.toggle("summary-hidden", state.summaryHidden);
+  renderSummaryPill();
+}
+function renderSummaryPill() {
+  const pill = document.querySelector("#summary-pill");
+  if (!pill) return;
+  pill.hidden = !state.summaryHidden;
+  if (!state.summaryHidden) return;
+  const n = state.cart.length;
+  const total = n && state.quote ? ` · <b>${esc(money(state.quote.monthly_discounted_total))}</b><span class="per">/mois</span>` : "";
+  pill.innerHTML = `${I.cart}<span>Devis · ${plural(n, "ligne", "lignes")}${total}</span>`;
+  pill.setAttribute("aria-label", `Afficher le panier : ${plural(n, "ligne", "lignes")}`);
+}
+
 function applyConfigCollapse() {
   const cfg = document.querySelector(".summary__config");
   if (cfg) cfg.classList.toggle("is-collapsed", state.cfgCollapsed);
@@ -1320,7 +1376,9 @@ function wireSummaryModal() {
   summaryModalWired = true;
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    if (state.guide.open) {
+    if (isConfirmOpen()) {
+      closeConfirm(false);
+    } else if (state.guide.open) {
       applyGuide({ type: "skip" });
     } else if (isHistoryOpen()) {
       closeHistory();
@@ -1359,6 +1417,7 @@ function snapshotActiveQuote() {
     savedAt: new Date().toISOString(),
     period: q.period,
     cart: clone(q.cart),
+    est: q.est ? clone(q.est) : null,
     monthly: state.quote ? state.quote.monthly_discounted_total : null,
     periodTotal: state.quote ? state.quote.period_discounted_total : null,
     partner: state.partner,
@@ -1376,7 +1435,7 @@ function reopenHistory(id) {
   const entry = loadHistory().find((e) => e.id === id);
   if (!entry) return;
   const q = createQuote(
-    { name: entry.name, projectName: entry.name, cart: entry.cart, period: entry.period },
+    { name: entry.name, projectName: entry.name, cart: entry.cart, period: entry.period, est: entry.est ? sanitizeEstimate(entry.est) : null },
     state.quotes.length
   );
   state.quotes.push(q);
@@ -1476,14 +1535,14 @@ function renderBanner() {
     </div>`;
 }
 
-/* ---------- Rendu : pied de page (version uniquement) ----------
-   La synchro QuoteFlow reste pilotée côté backend ; le front n'en affiche plus le
-   statut. Seule la version applicative est conservée en pied de page. */
-function renderSyncFoot() {
-  const el = document.querySelector("#sync-foot");
-  if (!el) return;
+/* ---------- Rendu : version applicative ----------
+   La synchro QuoteFlow reste pilotée côté backend ; le front n'en affiche pas le
+   statut. La version s'affiche en info-bulle au survol du logo (plus de pied de page). */
+function renderVersion() {
+  const brand = document.querySelector(".topbar .brand");
+  if (!brand) return;
   const appVersion = state.appVersion || state.health?.version || "";
-  el.innerHTML = appVersion ? `<span class="sync__version">v${esc(appVersion)}</span>` : "";
+  brand.dataset.version = appVersion ? `Version ${appVersion}` : "";
 }
 
 /* ---------- Rendu : catalogue ---------- */
@@ -1918,6 +1977,7 @@ function renderSummaryLines() {
         ${I.cart}
         <div>Votre devis est vide.<br />Estimez votre projet, ou parcourez le catalogue et ajoutez des produits.</div>
       </div>`;
+    renderSummaryPill();
     return;
   }
 
@@ -1982,8 +2042,7 @@ function renderSummaryLines() {
 
       return `
         <div class="cart-line ${open ? "is-open" : ""}">
-          <button class="cart-line__head" type="button" data-card-line="${esc(k)}" aria-expanded="${open ? "true" : "false"}">
-            <span class="cart-line__chevron">${I.chevron}</span>
+          <div class="cart-line__head">
             <span class="cart-line__info">
               <span class="cart-line__name" title="${esc(ql?.name || l.name)}">${esc(ql?.name || l.name)}</span>
               <span class="cart-line__meta">${termChipHtml(ql)}${meta.join("")}<span>${sub}</span></span>
@@ -1993,18 +2052,22 @@ function renderSummaryLines() {
               <b>${headline}</b><span class="per">${per}</span>
               ${showEng ? `<span class="eng-tot">${esc(money(engTot))} / engagement</span>` : ""}
             </span>
-          </button>
-          <div class="cart-line__body">
-            ${details}
-            <div class="cart-line__ctrl">
-              ${stepper(l.sku, l.source, l.quantity)}
-              <button class="btn btn--danger-ghost btn--sm cart-line__remove" data-remove="${esc(l.sku)}" data-source="${l.source}">${I.trash} Retirer</button>
-            </div>
           </div>
+          <div class="cart-line__ctrl">
+            ${stepper(l.sku, l.source, l.quantity)}
+            ${
+              details
+                ? `<button class="cart-line__more" type="button" data-card-line="${esc(k)}" aria-expanded="${open ? "true" : "false"}">${open ? "Masquer le détail" : "Détail du prix"}${I.chevron}</button>`
+                : ""
+            }
+            <button class="btn btn--danger-ghost btn--sm btn--icon cart-line__remove" data-remove="${esc(l.sku)}" data-source="${l.source}" title="Retirer du devis" aria-label="Retirer ${esc(ql?.name || l.name)} du devis">${I.trash}</button>
+          </div>
+          ${open ? details : ""}
         </div>`;
     })
     .join("");
   restoreStepperFocus(focus); // [G3] focus préservé à travers le rebuild du résumé
+  renderSummaryPill();
 }
 
 // Libellé de famille pour une ligne de devis (sert au regroupement du résumé et de l'export).
@@ -2084,10 +2147,11 @@ function renderSummaryTotals() {
   const collapsed = state.totalsCollapsed;
   root.innerHTML = `
     <div class="total-row total-row--main">
-      <button class="totals-toggle" type="button" data-toggle-totals aria-expanded="${collapsed ? "false" : "true"}" title="${collapsed ? "Afficher le détail financier" : "Masquer le détail financier"}"><span class="totals-toggle__chev">${I.chevron}</span><span class="lbl">Total mensuel net</span></button>
+      <span class="lbl">Total mensuel net</span>
       <span class="val">${esc(money(q.monthly_discounted_total))}<span class="per per--main">/mois</span></span>
     </div>
     ${hasOneTime ? `<div class="total-row total-row--onetime"><span class="lbl">Coûts ponctuels <small>(à l'achat)</small></span><span class="val">${esc(money(q.one_time_total))}</span></div>` : ""}
+    <button class="totals-more" type="button" data-toggle-totals aria-expanded="${collapsed ? "false" : "true"}">${collapsed ? "Voir le détail financier" : "Masquer le détail financier"}${I.chevron}</button>
     <div class="totals-detail ${collapsed ? "is-collapsed" : ""}">
       ${byFamily.size > 1 ? `<div class="fam-block"><div class="fam-block__title">Répartition mensuelle</div>${famRows}</div>` : ""}
       ${showMonthlyPublic ? `<div class="total-row total-row--muted"><span class="lbl">Mensuel public</span><span class="val">${esc(money(q.monthly_public_total))}</span></div>` : ""}
@@ -2105,6 +2169,7 @@ function renderSummaryTotals() {
     </div>
     ${state.quoteSource === "local" ? `<div class="total-sub">Calcul local hors-ligne · export indisponible jusqu'au retour de l'API</div>` : ""}
     ${state.quoteLoading ? `<div class="total-sub">Mise à jour…</div>` : ""}`;
+  renderSummaryPill();
 }
 
 /* ---------- Rendu global ---------- */
@@ -2118,7 +2183,7 @@ function render() {
   // Pied du résumé : reflète le mode (public/partenaire) piloté par la config.
   const foot = document.querySelector(".summary__foot");
   if (foot) foot.textContent = `Tarifs HT en euros · ${state.partner ? "tarifs partenaire" : "catalogue en prix publics"}`;
-  renderSyncFoot();
+  renderVersion();
 }
 
 /* ---------- Événements ---------- */
@@ -2129,11 +2194,27 @@ function wireEvents() {
 }
 
 function onClick(e) {
-  const t = e.target.closest("[data-family-nav],[data-subfamily],[data-card-toggle],[data-card-line],[data-period],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close],[data-summary-size],[data-summary-toggle],[data-summary-close],[data-toggle-config],[data-toggle-totals],[data-history-open],[data-history-close],[data-history-save],[data-history-reopen],[data-history-delete],[data-est-usage],[data-est-size],[data-est-qty],[data-est-custom],[data-est-remove],[data-est-add],[data-est-class],[data-est-detail],[data-est-choose],[data-est-done-close],[data-mode],[data-guide-mode],[data-guide-next],[data-guide-back],[data-guide-skip],[data-guide-goto],[data-guide-open]");
+  const t = e.target.closest("[data-family-nav],[data-subfamily],[data-card-toggle],[data-card-line],[data-period],[data-add],[data-step],[data-remove],[data-clear],[data-clear-search],[data-export],[data-lic-page],[data-set-api],[data-retry],[data-quote-switch],[data-quote-new],[data-quote-duplicate],[data-quote-close],[data-summary-size],[data-summary-toggle],[data-summary-close],[data-toggle-config],[data-toggle-totals],[data-history-open],[data-history-close],[data-history-save],[data-history-reopen],[data-history-delete],[data-est-usage],[data-est-size],[data-est-qty],[data-est-custom],[data-est-remove],[data-est-add],[data-est-class],[data-est-detail],[data-est-choose],[data-est-done-close],[data-mode],[data-confirm],[data-summary-hide],[data-summary-show],[data-guide-replay],[data-guide-mode],[data-guide-next],[data-guide-back],[data-guide-skip],[data-guide-goto],[data-guide-open]");
   if (!t) return;
 
+  if (t.dataset.confirm) {
+    closeConfirm(t.dataset.confirm === "ok");
+    return;
+  }
   if (onGuideClick(t)) return;
   if (onEstimateClick(t)) return;
+
+  // Panier masqué : la colonne centrale récupère la place, une pastille le rouvre.
+  if (t.hasAttribute("data-summary-hide")) {
+    setSummaryHidden(true);
+    document.querySelector("#summary-pill")?.focus();
+    return;
+  }
+  if (t.hasAttribute("data-summary-show")) {
+    setSummaryHidden(false);
+    document.querySelector("[data-summary-hide]")?.focus();
+    return;
+  }
 
   // Historique des devis (snapshots locaux).
   if (t.hasAttribute("data-history-open")) {
@@ -2159,6 +2240,7 @@ function onClick(e) {
 
   // Ouvrir / fermer le panier en grand (modale).
   if (t.hasAttribute("data-summary-toggle")) {
+    if (state.summaryHidden) setSummaryHidden(false);
     state.summaryMax = !state.summaryMax;
     applySummaryMax();
     return;
@@ -2182,6 +2264,7 @@ function onClick(e) {
     state.totalsCollapsed = !state.totalsCollapsed;
     persistSummaryUi();
     renderSummaryTotals();
+    document.querySelector("[data-toggle-totals]")?.focus();
     return;
   }
 
@@ -2227,6 +2310,7 @@ function onClick(e) {
     if (state.openLines.has(k)) state.openLines.delete(k);
     else state.openLines.add(k);
     renderSummaryLines();
+    document.querySelector(`[data-card-line="${CSS.escape(k)}"]`)?.focus();
     return;
   }
 
@@ -2541,7 +2625,7 @@ function onChange(e) {
    Seuls le résumé et les propositions sont re-rendus pendant la saisie, pour
    ne jamais faire perdre le focus d'un champ. */
 const Sizing = window.CalculatorSizing;
-const ESTIMATE_KEY = "calc.estimate";
+const ESTIMATE_KEY = "calc.estimate"; // ancienne estimation unique, migrée vers les cotations
 
 function sanitizeServer(s) {
   const int = (v, lo, hi, d) => clamp(Math.round(Number(v)) || d, lo, hi);
@@ -2567,38 +2651,59 @@ function defaultEstimate(usageId = "business-app") {
   };
 }
 
-function loadEstimate() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(ESTIMATE_KEY) || "null");
-    if (raw && Array.isArray(raw.servers)) {
-      return {
-        usage: String(raw.usage || "custom"),
-        servers: raw.servers.slice(0, 50).map(sanitizeServer),
-        ha: !!raw.ha,
-        backup: raw.backup !== false,
-        vmClass: Sizing.VM_CLASSES.some((c) => c.id === raw.vmClass) ? raw.vmClass : "gp",
-      };
-    }
-  } catch {
-    /* stockage indisponible ou corrompu : estimation par défaut */
-  }
-  return defaultEstimate();
+function sanitizeEstimate(raw) {
+  if (!raw || !Array.isArray(raw.servers)) return defaultEstimate();
+  return {
+    usage: String(raw.usage || "custom"),
+    servers: raw.servers.slice(0, 50).map(sanitizeServer),
+    ha: !!raw.ha,
+    backup: raw.backup !== false,
+    vmClass: Sizing.VM_CLASSES.some((c) => c.id === raw.vmClass) ? raw.vmClass : "gp",
+  };
+}
+
+// L'estimation est celle de la cotation active (créée par défaut au premier accès).
+Object.defineProperty(state, "est", {
+  get: () => {
+    const q = activeQuote();
+    if (!q.est) q.est = defaultEstimate();
+    return q.est;
+  },
+  set: (v) => {
+    activeQuote().est = v;
+  },
+});
+
+// Nettoyage des estimations relues du stockage, et migration de l'ancienne
+// estimation unique (calc.estimate) vers la cotation active, une seule fois.
+state.quotes.forEach((q) => {
+  if (q.est) q.est = sanitizeEstimate(q.est);
+});
+try {
+  const legacy = JSON.parse(localStorage.getItem(ESTIMATE_KEY) || "null");
+  if (legacy && !activeQuote().est) activeQuote().est = sanitizeEstimate(legacy);
+  persistQuotes(); // enregistrée dans la cotation AVANT de supprimer l'ancienne clé
+  if (legacy) localStorage.removeItem(ESTIMATE_KEY);
+} catch {
+  /* stockage indisponible ou corrompu : estimation par défaut */
 }
 
 function persistEstimate() {
-  try {
-    localStorage.setItem(ESTIMATE_KEY, JSON.stringify(state.est));
-  } catch {
-    /* stockage indisponible : non bloquant */
-  }
+  persistQuotes();
 }
-
-state.est = loadEstimate();
 state.estDetail = new Set(); // propositions dont le détail est déplié
 state.estPrev = null; // prix par offre au dernier affichage (calcul des écarts)
 state.estDeltas = {}; // écarts de prix affichés par offre
 state.estFlip = false; // alterne deux animations identiques pour rejouer le flash
 state.estChosen = null; // dernier devis créé depuis l'estimation (bandeau de confirmation)
+
+// Changement de projet (cotation) : écarts, détails dépliés et bandeau repartent de zéro.
+function resetEstimateUi() {
+  state.estPrev = null;
+  state.estDeltas = {};
+  state.estChosen = null;
+  state.estDetail.clear();
+}
 
 const estimateInput = () => ({
   servers: state.est.servers,
@@ -2646,8 +2751,7 @@ function renderEstimateView(body) {
       <div id="est-done">${estDoneHtml()}</div>
 
       <section class="est__results" aria-labelledby="est-s4">
-        <h2 class="est__h" id="est-s4">Nos propositions</h2>
-        <p class="est__help">Trois façons d'héberger votre projet chez Cloud Temple, en France. Prix publics hors taxes, recalculés à chaque modification.</p>
+        <h2 class="est__h" id="est-s4">Nos propositions <span class="est__h-note">prix publics HT, recalculés à chaque modification</span></h2>
         <div class="offer-grid" id="est-offers"></div>
         ${estHypothesesHtml()}
       </section>
@@ -2820,15 +2924,17 @@ function offerCardHtml(r, cheapest, changed) {
       ? `<span class="chip chip--pending">SecNumCloud en cours</span>`
       : "";
 
+  // Emplacements fixes, dans le même ordre pour toutes les cartes : la grille
+  // (subgrid) aligne ainsi prix, détail et boutons d'une carte à l'autre.
   let body;
   if (!r.ok) {
-    body = `<p class="offer__msg">${
+    body = `<div class="offer__slot"><p class="offer__msg">${
       r.reason === "too_big"
         ? "Un de vos serveurs dépasse la capacité d'une lame. Nos équipes peuvent vous proposer une configuration adaptée."
         : "Ajoutez au moins un serveur pour voir le prix."
-    }</p>`;
+    }</p></div>${'<div class="offer__slot"></div>'.repeat(4)}`;
   } else if (r.missing.length) {
-    body = `<p class="offer__msg">Tarif momentanément indisponible : le catalogue n'a pas pu être chargé.</p>`;
+    body = `<div class="offer__slot"><p class="offer__msg">Tarif momentanément indisponible : le catalogue n'a pas pu être chargé.</p></div>${'<div class="offer__slot"></div>'.repeat(4)}`;
   } else {
     const open = state.estDetail.has(o.id);
     const chosen = !!state.estChosen && state.estChosen.offerId === o.id && state.estChosen.sig === estimateSig();
@@ -2856,26 +2962,32 @@ function offerCardHtml(r, cheapest, changed) {
       )
       .join("");
     body = `
-      <div class="offer__price ${flash}"><b>${money(r.monthly)}</b><span>HT / mois</span></div>
-      ${delta}
-      <div class="offer__split">
+      <div class="offer__slot offer__pricebox">
+        <div class="offer__price ${flash}"><b>${money(r.monthly)}</b><span>HT / mois</span></div>
+        ${delta}
+      </div>
+      <div class="offer__slot offer__split">
         <span>Serveurs <b>${money(r.serversMonthly)}</b></span>
         <span title="Payé une fois pour tout votre environnement">Socle <b>${money(r.baseMonthly)}</b></span>
       </div>
-      ${what}
-      <button type="button" class="linkish offer__toggle" data-est-detail="${o.id}" aria-expanded="${open}">${I.chevron} ${open ? "Masquer le détail" : "Voir le détail"}</button>
-      ${open ? `<div class="offer__lines">${rows}</div>` : ""}
-      <button type="button" class="btn offer__cta ${isBest ? "offer__cta--best" : ""} ${chosen ? "is-done" : ""}" data-est-choose="${o.id}" ${chosen ? 'aria-disabled="true"' : ""}>${
-        chosen ? `${I.check} Devis créé` : "Choisir cette offre"
-      }</button>`;
+      <div class="offer__slot">${what}</div>
+      <div class="offer__slot">
+        <button type="button" class="btn offer__cta ${isBest ? "offer__cta--best" : ""} ${chosen ? "is-done" : ""}" data-est-choose="${o.id}" ${chosen ? 'aria-disabled="true"' : ""}>${
+          chosen ? `${I.check} Offre retenue` : "Choisir cette offre"
+        }</button>
+      </div>
+      <div class="offer__slot">
+        <button type="button" class="linkish offer__toggle" data-est-detail="${o.id}" aria-expanded="${open}">${I.chevron} ${open ? "Masquer le détail" : "Voir le détail"}</button>
+        ${open ? `<div class="offer__lines">${rows}</div>` : ""}
+      </div>`;
   }
 
   return `
     <article class="offer ${isBest ? "is-best" : ""}">
-      <div class="offer__tags">${badges}</div>
-      <h3 class="offer__title">${esc(o.label)}</h3>
-      <div class="offer__sub"><span>${esc(o.product)}</span>${qual}</div>
-      <p class="offer__hint">${esc(o.hint)}</p>
+      <div class="offer__slot offer__tags">${badges}</div>
+      <h3 class="offer__slot offer__title">${esc(o.label)}</h3>
+      <div class="offer__slot offer__sub"><span>${esc(o.product)}</span>${qual}</div>
+      <p class="offer__slot offer__hint">${esc(o.hint)}</p>
       ${body}
     </article>`;
 }
@@ -2884,38 +2996,79 @@ function offerCardHtml(r, cheapest, changed) {
 // ne crée pas un devis en double.
 const estimateSig = () => JSON.stringify(estimateInput());
 
-// « Choisir cette offre » : un choix = un devis. La cotation ouverte est remplie
-// si elle est vide, sinon une nouvelle cotation est créée et activée.
-function chooseOffer(offerId) {
+// « Choisir cette offre » : une cotation = un projet, donc l'offre REMPLACE le
+// contenu de la cotation active. Garde : si ce contenu a été modifié à la main
+// depuis le dernier choix (ou rempli depuis le catalogue), on demande confirmation.
+async function chooseOffer(offerId) {
   const r = Sizing.estimateOffer(offerId, estimateInput(), state.catalog);
   if (!r.ok || r.missing.length) return;
   const sig = estimateSig();
   if (state.estChosen && state.estChosen.offerId === offerId && state.estChosen.sig === sig) return;
 
-  const name = Guide.uniqueName(
-    Sizing.usageById(state.est.usage).label,
-    state.quotes.map((q, i) => quoteLabel(q, i))
-  );
-  if (Guide.chooseTarget(activeQuote()) === "new") {
-    const q = createQuote({ name, projectName: name }, state.quotes.length);
-    state.quotes.push(q);
-    state.activeQuoteId = q.id;
-    quoteReq += 1; // un chiffrage en vol pour l'ancienne cotation ne doit pas atterrir ici
-    window.clearTimeout(quoteTimer);
-  } else if (!state.projectName.trim()) {
-    state.projectName = name;
+  const q = activeQuote();
+  const idx = state.quotes.findIndex((x) => x.id === q.id);
+  if (Guide.replaceGuard(q.cart, q.chosenSig) === "confirm") {
+    const ok = await confirmDialog({
+      title: "Remplacer le contenu du devis ?",
+      body: `Attention : le devis « ${quoteLabel(q, idx)} » contient ${plural(q.cart.length, "ligne", "lignes")}, avec des produits ou des quantités modifiés à la main. Choisir l'offre « ${r.offer.label} » les supprimera toutes et les remplacera par les lignes de cette offre. Cette action ne peut pas être annulée.`,
+      ok: "Remplacer le devis",
+    });
+    if (!ok || activeQuote() !== q) return;
   }
+
+  state.cart = [];
+  state.openLines.clear();
   r.lines.forEach((l) => {
     const meta = state.catalog.find((p) => p.sku === l.sku);
     if (meta) upsertLine(meta, l.quantity);
   });
   resizeSupportLine();
+  if (!state.projectName.trim()) {
+    state.projectName = Guide.uniqueName(
+      Sizing.usageById(state.est.usage).label,
+      state.quotes.filter((x) => x.id !== q.id).map((x, i) => quoteLabel(x, i))
+    );
+  }
+  q.chosenSig = Guide.cartSignature(state.cart);
   persistQuotes();
-  const idx = state.quotes.findIndex((q) => q.id === state.activeQuoteId);
-  state.estChosen = { offerId, sig, name: quoteLabel(activeQuote(), idx), label: r.offer.label, monthly: r.monthly };
-  announce(`Devis « ${state.estChosen.name} » créé avec l'offre ${r.offer.label} : ${money(r.monthly)} hors taxes par mois`);
+  state.estChosen = { offerId, sig, name: quoteLabel(q, idx), label: r.offer.label, monthly: r.monthly };
+  announce(`Devis « ${state.estChosen.name} » : offre ${r.offer.label}, ${money(r.monthly)} hors taxes par mois`);
   afterCartChange("catalog");
   document.querySelector("#est-done .est-done")?.focus();
+}
+
+/* Fenêtre de confirmation (garde avant une action destructrice). Promesse résolue
+   à true (confirmer) ou false (annuler, Échap, clic sur le fond). Le focus va sur
+   « Annuler » par défaut et revient ensuite à l'élément d'origine. */
+let confirmResolve = null;
+let confirmReturnFocus = null;
+function confirmDialog({ title, body, ok }) {
+  const m = document.querySelector("#confirm-modal");
+  if (!m) return Promise.resolve(window.confirm(`${title}\n\n${body}`));
+  if (confirmResolve) closeConfirm(false);
+  m.querySelector("#confirm-title").textContent = title;
+  m.querySelector("#confirm-body").textContent = body;
+  m.querySelector('[data-confirm="ok"]').textContent = ok;
+  confirmReturnFocus = document.activeElement;
+  m.classList.add("is-open");
+  document.body.classList.add("modal-open");
+  m.querySelector('[data-confirm="cancel"].btn')?.focus();
+  return new Promise((resolve) => {
+    confirmResolve = resolve;
+  });
+}
+function isConfirmOpen() {
+  return !!confirmResolve;
+}
+function closeConfirm(result) {
+  const m = document.querySelector("#confirm-modal");
+  if (m) m.classList.remove("is-open");
+  document.body.classList.remove("modal-open");
+  const resolve = confirmResolve;
+  confirmResolve = null;
+  if (resolve) resolve(result);
+  if (!result) confirmReturnFocus?.focus?.();
+  confirmReturnFocus = null;
 }
 
 function estDoneHtml() {
@@ -2925,8 +3078,8 @@ function estDoneHtml() {
     <div class="est-done" tabindex="-1">
       <span class="est-done__ico" aria-hidden="true">${I.check}</span>
       <div class="est-done__text">
-        <b>Devis « ${esc(c.name)} » créé</b> avec l'offre ${esc(c.label)}, ${esc(money(c.monthly))} HT / mois. Il s'affiche dans le panneau Devis.
-        <span class="est-done__hint">Pour un autre devis, ajustez votre projet puis choisissez de nouveau une offre.</span>
+        <b>Devis « ${esc(c.name)} » prêt</b> avec l'offre ${esc(c.label)}, ${esc(money(c.monthly))} HT / mois. Il s'affiche dans le panneau Devis.
+        <span class="est-done__hint">Choisir une autre offre remplacera ce contenu. Pour chiffrer un autre projet, créez une nouvelle cotation.</span>
       </div>
       <button type="button" class="btn btn--ghost btn--sm" data-summary-toggle>Voir le devis</button>
       <button type="button" class="modal__close" data-est-done-close aria-label="Masquer ce message">${I.close}</button>
@@ -3247,6 +3400,14 @@ function renderGuide(focusSelector) {
 
 // Clics de l'assistant et du sélecteur de mode. Renvoie true si l'événement a été traité.
 function onGuideClick(t) {
+  // TEMPORAIRE (recette) : rejoue la première visite complète. À retirer avant la mise en ligne.
+  if (t.hasAttribute("data-guide-replay")) {
+    window.clearTimeout(revealTimer);
+    state.guide = Guide.initialGuide({ onboarded: false, mode: state.mode });
+    renderMain();
+    renderGuide();
+    return true;
+  }
   if (t.dataset.mode) {
     goMode(t.dataset.mode);
     return true;

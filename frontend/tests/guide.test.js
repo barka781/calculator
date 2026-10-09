@@ -166,11 +166,27 @@ test("pendant la révélation : ni relance ni passage ne permettent de la rejoue
   assert.notEqual(run(skipped, { type: "open", step: 1 }, "next", "next", "next").step, G.REVEAL);
 });
 
-test("un choix = un devis : cotation vide réutilisée, sinon nouvelle", () => {
-  assert.equal(G.chooseTarget({ cart: [] }), "reuse");
-  assert.equal(G.chooseTarget({ cart: [{ sku: "x" }] }), "new");
-  assert.equal(G.chooseTarget(null), "new");
-  assert.equal(G.chooseTarget({}), "new");
+test("empreinte de panier : indépendante de l'ordre, sensible à la quantité et à la source", () => {
+  const a = [{ sku: "x", source: "catalog", quantity: 2 }, { sku: "y", source: "license", quantity: 1 }];
+  const b = [a[1], a[0]];
+  assert.equal(G.cartSignature(a), G.cartSignature(b));
+  assert.notEqual(G.cartSignature(a), G.cartSignature([{ ...a[0], quantity: 3 }, a[1]]));
+  assert.notEqual(G.cartSignature(a), G.cartSignature([a[0], { ...a[1], source: "catalog" }]));
+  assert.equal(G.cartSignature([]), "");
+  assert.equal(G.cartSignature(null), "");
+});
+
+test("garde de remplacement : confirmation seulement si le devis a été modifié à la main", () => {
+  const chosen = [{ sku: "vcpu", source: "catalog", quantity: 24 }, { sku: "tenant", source: "catalog", quantity: 1 }];
+  const sig = G.cartSignature(chosen);
+  assert.equal(G.replaceGuard([], sig), "replace"); // devis vide
+  assert.equal(G.replaceGuard([], ""), "replace");
+  assert.equal(G.replaceGuard([...chosen].reverse(), sig), "replace"); // simple changement d'offre
+  assert.equal(G.replaceGuard([...chosen, { sku: "s3", source: "catalog", quantity: 1 }], sig), "confirm"); // produit ajouté
+  assert.equal(G.replaceGuard([{ ...chosen[0], quantity: 30 }, chosen[1]], sig), "confirm"); // quantité modifiée
+  assert.equal(G.replaceGuard([chosen[1]], sig), "confirm"); // ligne retirée
+  assert.equal(G.replaceGuard(chosen, ""), "confirm"); // lignes ajoutées sans aucun choix préalable
+  assert.equal(G.replaceGuard(chosen, undefined), "confirm");
 });
 
 test("noms de cotation uniques, insensibles à la casse et aux trous de numérotation", () => {
